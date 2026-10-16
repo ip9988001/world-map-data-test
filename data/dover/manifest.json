@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-15T10:38:56Z",
+ "generated_at": "2026-10-16T10:19:17Z",
  "anchors": {
   "state": "DE",
   "state_fips": "10",
@@ -18,12 +18,12 @@
    39.22
   ]
  },
- "runner": "38720858992",
+ "runner": "38886346159",
  "sources": [
   {
    "source": "overture",
    "status": "ok",
-   "ts": "2026-10-15T10:31:40Z",
+   "ts": "2026-10-16T10:18:42Z",
    "bbox": [
     -75.6,
     39.1,
@@ -37,12 +37,12 @@
    "bytes": 16452588,
    "sha256": "7345d0277642e266",
    "file": "data/dover/raw/overture_dover.geojson.gz",
-   "elapsed": 3.3
+   "elapsed": 6.2
   },
   {
    "source": "nad_arcgis",
    "status": "ok",
-   "ts": "2026-10-15T10:38:54Z",
+   "ts": "2026-10-16T10:19:05Z",
    "channel": "A-official-rest",
    "layer": "https://services.arcgis.com/xOi1kZaI0eWDREZv/ArcGIS/rest/services/Address_Points_from_National_Address_Database_view/FeatureServer/0",
    "fields_n": 60,
@@ -348,12 +348,12 @@
    ],
    "notes": [],
    "file": "data/dover/raw/nad_dover_official.geojson.gz",
-   "elapsed": 433.1
+   "elapsed": 22.9
   },
   {
    "source": "openaddresses",
    "status": "ok",
-   "ts": "2026-10-15T10:38:55Z",
+   "ts": "2026-10-16T10:19:15Z",
    "targets": 2,
    "rows": 92455,
    "rows_19901": 29077,
@@ -381,12 +381,12 @@
      "rows_19901": 29077
     }
    ],
-   "elapsed": 1.8
+   "elapsed": 9.2
   },
   {
    "source": "census_tiger",
    "status": "ok",
-   "ts": "2026-10-15T10:38:56Z",
+   "ts": "2026-10-16T10:19:17Z",
    "rest_queries": [
     {
      "key": "zcta",
@@ -459,7 +459,7 @@
      ]
     }
    ],
-   "elapsed": 1.0
+   "elapsed": 2.6
   }
  ],
  "alignment": {
