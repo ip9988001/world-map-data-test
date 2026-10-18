@@ -869,7 +869,10 @@ def process_county(scope: dict, county: dict, raw_dir: Path, cache_dir: Path,
     fname = f"ADDR-US-{scope['state']}-{fips}-{county['key']}.ndjson.gz"
     out_path = out_dir / fname
     out_dir.mkdir(parents=True, exist_ok=True)
-    with gzip.open(out_path, "wt", encoding="utf-8") as fh:
+    # mtime=0 → 同输入同输出同 sha256（gzip 头默认写当前时间，会破坏可复现性）
+    with open(out_path, "wb") as raw, \
+            gzip.GzipFile(fileobj=raw, mode="wb", compresslevel=6, mtime=0) as gz, \
+            io.TextIOWrapper(gz, encoding="utf-8") as fh:
         for row in out_rows:
             fh.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
 
