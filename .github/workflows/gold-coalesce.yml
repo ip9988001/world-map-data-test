@@ -84,9 +84,10 @@ jobs:
           RAW_REPO: ${{ github.repository_owner }}/World-US-Map-Data
         run: |
           mkdir -p "data/raw/US-$ST" "data/gold/US-$ST"
+          # MANIFEST 可能还没发（一仓仍在采集）→ 不在这里炸，交给 preflight 明确报 "missing"
           gh release download "$RAW_TAG" -R "$RAW_REPO" -D "data/raw/US-$ST" \
-            -p MANIFEST.json --clobber
-          ls -la "data/raw/US-$ST/MANIFEST.json"
+            -p MANIFEST.json --clobber || echo "⚠️ 该 Release 尚无 MANIFEST.json（采集未收尾）"
+          ls -la "data/raw/US-$ST/MANIFEST.json" 2>/dev/null || true
 
       - name: 前置核验（一仓终态封印，未封印直接拒绝开跑）
         run: |

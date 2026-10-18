@@ -463,6 +463,15 @@ def read_overture_slice(parquet: Path, bbox: tuple) -> list[dict]:
     return rows
 
 
+def bbox_split_antimeridian(bbox: tuple) -> list[tuple]:
+    """跨 180° 经线的 bbox 拆成两段。AK 的 roster bbox 是 [-179.231, …, 179.86, …]，
+    宽度 ≈ 359°，不拆的话 WHERE 条件会匹配地球上几乎所有行（4GB parquet 全量载入 → OOM）。"""
+    w, s, e, n = bbox
+    if w <= e and (e - w) <= 180.0:
+        return [(w, s, e, n)]
+    return [(w, s, 180.0, n), (-180.0, s, e, n)]
+
+
 # ---------------------------------------------------------------- 读取：Overture（全州一次切片，分县分桶）
 def bucket_overture(parquet: Path, county_index: SpatialIndex, cache_dir: Path,
                     write_fips: set, state_bbox: tuple) -> tuple[dict, int]:
@@ -481,15 +490,20 @@ def bucket_overture(parquet: Path, county_index: SpatialIndex, cache_dir: Path,
         log(f"Overture 分桶缓存命中（{len(targets)} 县，州外 {st.get('outside', 0):,} 行）")
         return {f: sum(1 for _ in gzip.open(p, "rt")) for f, p in targets.items()}, st.get("outside", 0)
 
-    w, s, e, n = state_bbox
+    # bbox 跨 180° 经线（AK）必须拆两段，否则等价于「全球查询」——实测 AK 会直接爆内存
+    boxes = bbox_split_antimeridian(state_bbox)
+    conds = " OR ".join(
+        f"(bbox.xmin >= {w} AND bbox.xmax <= {e} AND bbox.ymin >= {s} AND bbox.ymax <= {n})"
+        for (w, s, e, n) in boxes)
     sql = f"""
         SELECT id, number, street, unit, postcode, postal_city, address_levels,
                sources[1].dataset AS src_ds,
                cast(geometry AS VARCHAR) AS geom
         FROM read_parquet('{parquet.as_posix()}')
-        WHERE bbox.xmin >= {w} AND bbox.xmax <= {e}
-          AND bbox.ymin >= {s} AND bbox.ymax <= {n}
+        WHERE {conds}
     """
+    if len(boxes) > 1:
+        log(f"⚠️ bbox 跨 180° 经线 → 拆成 {len(boxes)} 段查询：{boxes}")
     con = duckdb.connect()
     cur = con.execute(sql)
     handles = {}
