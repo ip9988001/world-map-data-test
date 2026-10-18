@@ -53,15 +53,29 @@ jobs:
       - name: 装依赖（pyshp + duckdb + PyYAML；不装 GIS 运行时）
         run: pip install "pyshp>=2.3.1" "duckdb>=1.1.0" "PyYAML>=6.0"
 
-      - name: 拉取一仓 raw 资产（只读）
+      - name: 拉取一仓 MANIFEST（先只拉账本，小）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RAW_REPO: ${{ github.repository_owner }}/World-US-Map-Data
         run: |
-          mkdir -p "data/raw/US-$ST"
-          gh release download "$RAW_TAG" -R "${{ github.repository_owner }}/World-US-Map-Data" \
-            -D "data/raw/US-$ST" --clobber
+          mkdir -p "data/raw/US-$ST" "data/gold/US-$ST"
+          gh release download "$RAW_TAG" -R "$RAW_REPO" -D "data/raw/US-$ST" \
+            -p MANIFEST.json --clobber
+          ls -la "data/raw/US-$ST/MANIFEST.json"
+
+      - name: 前置核验（一仓终态封印，未封印直接拒绝开跑）
+        run: |
+          python3 scripts/gold_preflight.py --state "$ST" \
+            --raw-dir "data/raw/US-$ST" --json-out "data/gold/US-$ST/preflight.json"
+
+      - name: 拉取一仓 raw 全量资产（只读）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RAW_REPO: ${{ github.repository_owner }}/World-US-Map-Data
+        run: |
+          gh release download "$RAW_TAG" -R "$RAW_REPO" -D "data/raw/US-$ST" --clobber
           du -sh "data/raw/US-$ST"
-          ls "data/raw/US-$ST" | head -5
+          ls "data/raw/US-$ST" | wc -l
 
       - name: 缓存层（ZCTA 面等跨 run 复用，避免每次重拉 TIGERweb）
         uses: actions/cache@v4
