@@ -137,8 +137,12 @@ jobs:
         if: ${{ success() && github.event.inputs.publish != 'false' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
-          TAG="gold-US-$ST-v1"          mkdir -p "data/gold/US-$ST/_rel"
+          set -u
+          TAG="gold-US-$ST-v1"
+          echo "目标 tag=[$TAG] repo=[$REPO]"
+          mkdir -p "data/gold/US-$ST/_rel"
           cp "data/gold/US-$ST"/*.ndjson.gz "data/gold/US-$ST/MANIFEST.json" \
              "data/gold/US-$ST/STATUS.json" "data/gold/US-$ST/_rel/" 2>/dev/null || true
           python3 - <<'PY' > "data/gold/US-$ST/_rel/RELEASE_NOTES.md"
@@ -158,13 +162,14 @@ jobs:
               print(f"| {c['county']} {c['county_name']} | {c['output_rows']:,} | {c['nad_input']:,} | "
                     f"{c['oa_input']:,} | {c['ovt_input']:,} | {t.get('S',0)}/{t.get('A',0)}/{t.get('B',0)} |")
           PY
-          gh release view "$TAG" -R "${{ github.repository }}" >/dev/null 2>&1 \
-            || gh release create "$TAG" -R "${{ github.repository }}" \
+          gh release view "$TAG" -R "$REPO" >/dev/null 2>&1 \
+            || gh release create "$TAG" -R "$REPO" \
                  --title "gold-US-$ST-v1 · 精品地址库" \
                  --notes-file "data/gold/US-$ST/_rel/RELEASE_NOTES.md"
-          gh release upload "$TAG" -R "${{ github.repository }}" \
+          echo "release 就绪，开始上传"
+          gh release upload "$TAG" -R "$REPO" \
             "data/gold/US-$ST/_rel"/* --clobber
-          gh release view "$TAG" -R "${{ github.repository }}" --json assets \
+          gh release view "$TAG" -R "$REPO" --json assets \
             -q '.assets[] | "\(.size)\t\(.name)"'
 
       - uses: actions/upload-artifact@v4
