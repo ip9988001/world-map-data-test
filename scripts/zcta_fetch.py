@@ -183,7 +183,25 @@ def main(argv=None) -> int:
         log(f"已存在 {out}（{n} 行），跳过；--force 可重跑")
         return 0
 
-    rows = fetch(where, bbox)
+    rows = []
+    if args.zcta_range:
+        lo_i, hi_i = int(lo), int(hi)
+        CHUNK = 200
+        while lo_i <= hi_i:
+            hi_c = min(lo_i + CHUNK - 1, hi_i)
+            w = f"ZCTA5>='{lo_i:05d}' AND ZCTA5<='{hi_c:05d}'"
+            log(f"分块查询 {lo_i:05d}-{hi_c:05d}")
+            try:
+                rows.extend(fetch(w, bbox))
+            except RuntimeError as exc:
+                log(f"⚠️ 分块 {lo_i}-{hi_c} 失败：{exc}")
+            lo_i = hi_c + 1
+    else:
+        rows = fetch(where, bbox)
+    dedup = {}
+    for r in rows:
+        dedup.setdefault(r["zcta5"], r)
+    rows = list(dedup.values())
     if not rows:
         log("⚠️ 取回 0 个面 —— 端点可能降级或条件写错")
         return 2

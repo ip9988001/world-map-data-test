@@ -338,8 +338,9 @@ def bucket_oa_statewide(zip_path: Path, county_index: SpatialIndex, cache_dir: P
 
     write_fips: 只对这批县落盘；其余县（含 0-NAD 县）只计数，用于账本拆栏。
     """
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    targets = {f: cache_dir / f"oa-US-{f}.ndjson.gz" for f in fips_list}
+    pkg_dir = cache_dir / zip_path.name.replace(".zip", "").replace("OA-", "oa-")
+    pkg_dir.mkdir(parents=True, exist_ok=True)
+    targets = {f: pkg_dir / f"oa-US-{f}.ndjson.gz" for f in fips_list}
     write_fips = write_fips if write_fips is not None else set(fips_list)
     if all(p.exists() for p in targets.values()):
         log(f"OA 分桶缓存命中（{len(targets)} 县）")
@@ -388,18 +389,19 @@ def bucket_oa_statewide(zip_path: Path, county_index: SpatialIndex, cache_dir: P
     return dict(counts)
 
 
-def read_oa_bucket(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
+def read_oa_bucket(cache_dir: Path, fips: str) -> list[dict]:
+    """合并该县在所有 OA 包下的分桶（每包一个子目录，避免包间互相覆盖）。"""
     out = []
-    with gzip.open(path, "rt", encoding="utf-8") as fh:
-        for line in fh:
-            if line.strip():
-                r = json.loads(line)
-                r["num"] = parse_number(r.get("number"))
-                r["skey"] = street_key(r.get("street"))
-                r["unit_k"], r["ukey"] = norm_unit(r.get("unit"))
-                out.append(r)
+    for path in sorted(cache_dir.glob(f"*/oa-US-{fips}.ndjson.gz")):
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip():
+                    r = json.loads(line)
+                    r["num"] = parse_number(r.get("number"))
+                    r["skey"] = street_key(r.get("street"))
+                    r["unit_k"], r["ukey"] = norm_unit(r.get("unit"))
+                    r["_pkg"] = path.parent.name
+                    out.append(r)
     return out
 
 
@@ -555,7 +557,7 @@ def process_county(scope: dict, county: dict, raw_dir: Path, cache_dir: Path,
         dedup_nad += len(group) - 1
 
     # ---- OA（读本县分桶）
-    oa_rows = read_oa_bucket(cache_dir / f"oa-US-{fips}.ndjson.gz")
+    oa_rows = read_oa_bucket(cache_dir, fips)
     funnel["oa_input"] = len(oa_rows)
     oa_bad = Counter()
     oa_votes = Counter()
@@ -819,6 +821,7 @@ def main(argv=None) -> int:
 
     # OA 全州一次扫描 → 分县缓存
     oa_buckets = {}
+    zero_counts = Counter()
     write_fips = {c["fips"] for c in counties}
     for src_name, fname in sorted(scope["assets"]["oa"].items()):
         if not (raw_dir / fname).exists():
@@ -828,8 +831,10 @@ def main(argv=None) -> int:
                                 [c["fips"] for c in counties], write_fips)
         for f, n in s.items():
             oa_buckets[f] = oa_buckets.get(f, 0) + n
+            if f not in write_fips:
+                zero_counts[f] += n
     for c in zero:
-        c["oa_rows"] = oa_buckets.get(c["fips"], 0)
+        c["oa_rows"] = zero_counts.get(c["fips"], 0)
     log(f"OA 分桶就绪：有 NAD 县 {sum(oa_buckets.get(f, 0) for f in write_fips)} 行 / "
         f"0-NAD 县 {sum((c.get('oa_rows') or 0) for c in zero)} 行 / {round(time.time()-t_start,1)}s")
 
@@ -872,7 +877,7 @@ def main(argv=None) -> int:
         "zero_nad_counties": len(zero),
         "note": "coverage 相对上游（一仓 NAD）声明，不是地理真值",
     }
-    manifest["zero_nad_counties"] = zero
+    manifest["zero_nad_counties"] = [{k: v for k, v in c.items() if k != "rings"} for c in zero]
     manifest["zcta_available"] = bool(zcta)
     (out_dir / "MANIFEST.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     (out_dir / "STATUS.json").write_text(json.dumps(
