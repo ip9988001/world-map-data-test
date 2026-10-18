@@ -22,8 +22,8 @@ on:
         description: 一仓原始数据 tag
         default: raw-US-SD-v1
       counties:
-        description: 逗号分隔县 FIPS（空=全州所有有数据的县）
-        default: "46053,46083"
+        description: 逗号分隔县 FIPS（留空=全州所有有 NAD 数据的县）
+        default: ""
       publish:
         description: 是否发 Release（true/false）
         default: "true"
@@ -156,19 +156,41 @@ jobs:
           print(f"- 口径：NAD 主干 + TIGER 60m 号段校验 + OA 独立票；Overture 仅溯源不计票")
           print(f"- 合计：{m['totals']['output_rows']:,} 行 / {m['totals']['counties']} 县")
           print(f"- ISO：{m['admin']['admin1_code']} · {m['admin']['admin1_name']} · {m['admin']['country_code_alpha3']}")
+          cov = m.get("coverage") or {}
+          print(f"- coverage：**{cov.get('nad_backed_counties')}/{cov.get('total_counties')} counties "
+                f"(NAD-backed) + {cov.get('zero_nad_counties')} counties 0 upstream coverage**")
+          print(f"- timezone：`{m.get('timezone')}`（{m.get('timezone_precision')}）")
+          print(f"- release_rev：`{m.get('release_rev')}`（同 tag 内滚动标识；锁定请锚 sha256）")
           print("\n| 县 | 输出行 | NAD | OA | OVT | S/A/B |\n|---|---|---|---|---|---|")
           for c in m["counties"]:
               t = c.get("tiers") or {}
               print(f"| {c['county']} {c['county_name']} | {c['output_rows']:,} | {c['nad_input']:,} | "
                     f"{c['oa_input']:,} | {c['ovt_input']:,} | {t.get('S',0)}/{t.get('A',0)}/{t.get('B',0)} |")
+          print(f"\n分源独立守恒：{m['totals']['conservation_ok']}")
+          z = m.get("zero_nad_counties") or []
+          print(f"\n- OA 落在 0-NAD 县：{m['totals']['oa_in_zero_nad_counties']:,} 行（单列，不计入 out_of_bounds）")
+          if z:
+              print(f"\n<details><summary>0 上游覆盖县（{len(z)} 个，不产分片）</summary>\n")
+              print("| FIPS | 县 | OA 行数 |\n|---|---|---|")
+              for c in z:
+                  print(f"| {c['fips']} | {c.get('name')} | {c.get('oa_rows') or 0:,} |")
+              print("\n</details>")
           PY
           gh release view "$TAG" -R "$REPO" >/dev/null 2>&1 \
             || gh release create "$TAG" -R "$REPO" \
                  --title "gold-US-$ST-v1 · 精品地址库" \
                  --notes-file "data/gold/US-$ST/_rel/RELEASE_NOTES.md"
           echo "release 就绪，开始上传"
+          # 同 tag 滚动发布：先删掉不在本次产物里的陈旧资产
+          REL="data/gold/US-$ST/_rel"
+          for name in $(gh release view "$TAG" -R "$REPO" --json assets -q '.assets[].name'); do
+            if [ ! -f "$REL/$name" ]; then
+              echo "  删除陈旧资产 $name"
+              gh release delete-asset "$TAG" "$name" -R "$REPO" --yes || true
+            fi
+          done
           gh release upload "$TAG" -R "$REPO" \
-            "data/gold/US-$ST/_rel"/* --clobber
+            "$REL"/* --clobber
           gh release view "$TAG" -R "$REPO" --json assets \
             -q '.assets[] | "\(.size)\t\(.name)"'
 

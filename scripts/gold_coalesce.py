@@ -333,10 +333,14 @@ def read_nad(path: Path) -> list[dict]:
 
 # ---------------------------------------------------------------- 读取：OpenAddresses（一次扫描多县分桶）
 def bucket_oa_statewide(zip_path: Path, county_index: SpatialIndex, cache_dir: Path,
-                        fips_list: list[str]) -> dict:
-    """全州 OA 一次流式扫描，按县分桶落 ndjson.gz；已有缓存直接复用。"""
+                        fips_list: list[str], write_fips: set | None = None) -> dict:
+    """全州 OA 一次流式扫描，按县分桶落 ndjson.gz；已有缓存直接复用。
+
+    write_fips: 只对这批县落盘；其余县（含 0-NAD 县）只计数，用于账本拆栏。
+    """
     cache_dir.mkdir(parents=True, exist_ok=True)
     targets = {f: cache_dir / f"oa-US-{f}.ndjson.gz" for f in fips_list}
+    write_fips = write_fips if write_fips is not None else set(fips_list)
     if all(p.exists() for p in targets.values()):
         log(f"OA 分桶缓存命中（{len(targets)} 县）")
         return {f: sum(1 for _ in gzip.open(p, "rt")) for f, p in targets.items()}
@@ -363,6 +367,9 @@ def bucket_oa_statewide(zip_path: Path, county_index: SpatialIndex, cache_dir: P
                 fips = county_index.find(lon, lat)
                 if not fips:
                     continue
+                counts[fips] += 1
+                if fips not in write_fips:
+                    continue
                 if fips not in handles:
                     handles[fips] = gzip.open(targets[fips], "wt", encoding="utf-8")
                 rec = {
@@ -374,11 +381,10 @@ def bucket_oa_statewide(zip_path: Path, county_index: SpatialIndex, cache_dir: P
                     "file": m.rsplit("/", 1)[-1].replace(".csv", ""),
                 }
                 handles[fips].write(json.dumps(rec, ensure_ascii=False, separators=(",", ":")) + "\n")
-                counts[fips] += 1
     for h in handles.values():
         h.close()
-    log(f"OA 扫描 {tot} 行 → 分桶 {len(counts)} 县，合计 {sum(counts.values())} 行；"
-        f"界外 {tot - sum(counts.values())} 行")
+    log(f"OA 扫描 {tot} 行 → 落盘 {len(handles)} 县，命中县内合计 {sum(counts.values())} 行；"
+        f"界外 {tot - sum(counts.values())} 行；无 NAD 县 {sum(v for k, v in counts.items() if k not in write_fips)} 行")
     return dict(counts)
 
 
@@ -689,7 +695,8 @@ def process_county(scope: dict, county: dict, raw_dir: Path, cache_dir: Path,
             "state_fips": scope["state_fips"],
             "zip5": zip5, "plus4": None, "zip9": zip5,
             "latitude": round(rep["lat"], 7), "longitude": round(rep["lon"], 7),
-            "addr_type": addr_type, "area_code": None, "timezone": scope["timezone"],
+            "addr_type": addr_type, "area_code": None, "timezone": scope.get("timezone"),
+            "timezone_precision": scope.get("timezone_precision"),
             "full_formatted_address": full,
             "source_confidence": {"S": "S-Tier", "A": "A-Tier", "B": "B-Tier"}[tier],
             "country_code": admin["country_code"],
@@ -796,19 +803,35 @@ def main(argv=None) -> int:
             rings.extend(f["rings"])
         c["rings"] = rings
         county_shapes.append({"fips": c["fips"], "rings": rings})
+    # 0-NAD 县也进索引：只参与 OA 计数，不产分片（否则它们的 OA 行会污染 out_of_bounds）
+    zero = scope.get("zero_nad_counties") or []
+    for c in zero:
+        if not c.get("county_geo"):
+            continue
+        rings = []
+        for f in load_esri_rings(raw_dir / c["county_geo"]):
+            rings.extend(f["rings"])
+        if rings:
+            c["rings"] = rings
+            county_shapes.append({"fips": c["fips"], "rings": rings})
     county_index = SpatialIndex(county_shapes, "fips")
-    log(f"县界索引就绪：{len(county_shapes)} 县 / {round(time.time()-t_start,1)}s")
+    log(f"县界索引就绪：{len(county_shapes)} 县（含 {len(zero)} 个 0-NAD 县）/ {round(time.time()-t_start,1)}s")
 
     # OA 全州一次扫描 → 分县缓存
     oa_buckets = {}
+    write_fips = {c["fips"] for c in counties}
     for src_name, fname in sorted(scope["assets"]["oa"].items()):
         if not (raw_dir / fname).exists():
             log(f"⚠️ OA 包缺失，跳过：{fname}")
             continue
-        s = bucket_oa_statewide(raw_dir / fname, county_index, cache, [c["fips"] for c in counties])
+        s = bucket_oa_statewide(raw_dir / fname, county_index, cache,
+                                [c["fips"] for c in counties], write_fips)
         for f, n in s.items():
             oa_buckets[f] = oa_buckets.get(f, 0) + n
-    log(f"OA 分桶就绪：{oa_buckets} / {round(time.time()-t_start,1)}s")
+    for c in zero:
+        c["oa_rows"] = oa_buckets.get(c["fips"], 0)
+    log(f"OA 分桶就绪：有 NAD 县 {sum(oa_buckets.get(f, 0) for f in write_fips)} 行 / "
+        f"0-NAD 县 {sum((c.get('oa_rows') or 0) for c in zero)} 行 / {round(time.time()-t_start,1)}s")
 
     zcta = load_zcta(cache / f"zcta-US-{scope['state']}.ndjson.gz")
     zcta_idx = SpatialIndex(zcta, "zcta5") if zcta else None
@@ -836,9 +859,20 @@ def main(argv=None) -> int:
             "nad_input": sum(r["nad_input"] for r in results),
             "oa_input": sum(r["oa_input"] for r in results),
             "ovt_input": sum(r["ovt_input"] for r in results),
+            "oa_in_zero_nad_counties": sum((c.get("oa_rows") or 0) for c in zero),
             "conservation_ok": ok,
         },
     }
+    manifest["release_rev"] = __import__("os").environ.get("GITHUB_RUN_ID", "local")
+    manifest["timezone"] = scope.get("timezone")
+    manifest["timezone_precision"] = scope.get("timezone_precision")
+    manifest["coverage"] = {
+        "total_counties": (scope.get("coverage") or {}).get("total_counties"),
+        "nad_backed_counties": len(results),
+        "zero_nad_counties": len(zero),
+        "note": "coverage 相对上游（一仓 NAD）声明，不是地理真值",
+    }
+    manifest["zero_nad_counties"] = zero
     (out_dir / "MANIFEST.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     (out_dir / "STATUS.json").write_text(json.dumps(
         {"generated_at": now_utc(), "state": scope["state"], "ok": ok,

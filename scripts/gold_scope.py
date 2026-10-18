@@ -165,13 +165,28 @@ def build_scope(state: str, raw_dir: Path, roster_path: Path, reg_path: Path,
         raise KeyError("没有任何可加工的完整县")
 
     admin = admin_constants(registry, state)
+    # 0-NAD 县：roster 里有、但一仓没有 NAD 数据的县（必须如实声明，不能静默缺失）
+    zero = []
+    have = {c["fips"] for c in counties}
+    for c in (r.get("counties") or []):
+        fips = str(c.get("fips") or c.get("county_fips") or "").strip()
+        if not fips or fips in have:
+            continue
+        zero.append({
+            "fips": fips,
+            "key": c.get("key"),
+            "name": c.get("name"),
+            "reason": "no_upstream_coverage",
+            "county_geo": assets["tiger_county"].get(fips),
+            "oa_rows": None,
+        })
     scope = {
         "state": state,
         "state_name": r.get("name"),
         "state_fips": r.get("state_fips"),
         "bbox": r.get("bbox"),
-        "timezone": STATE_TZ.get(state),
-        "multi_tz": state in MULTI_TZ,
+        "timezone": STATE_TZ.get(state) if state not in MULTI_TZ else None,
+        "timezone_precision": "unresolved_multi_tz" if state in MULTI_TZ else "state_level",
         "zcta_range": r.get("zcta_range"),
         "admin": admin,
         "admin_registry": {
@@ -189,6 +204,12 @@ def build_scope(state: str, raw_dir: Path, roster_path: Path, reg_path: Path,
             "outofstate": assets.get("outofstate"),
         },
         "counties": counties,
+        "zero_nad_counties": zero,
+        "coverage": {
+            "total_counties": len(counties) + len(zero),
+            "nad_backed_counties": len(counties),
+            "zero_nad_counties": len(zero),
+        },
         "source_manifest": {
             "generated_at": manifest.get("generated_at"),
             "runner": manifest.get("runner"),
@@ -219,8 +240,9 @@ def main(argv=None) -> int:
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(scope, ensure_ascii=False, indent=1), encoding="utf-8")
-    log(f"写出 {out}：{scope['state']} / {len(scope['counties'])} 县 / "
-        f"admin1={scope['admin']['admin1_code']} / tz={scope['timezone']}")
+    log(f"写出 {out}：{scope['state']} / {len(scope['counties'])} 县有 NAD / "
+        f"{len(scope['zero_nad_counties'])} 县 0 上游覆盖 / "
+        f"admin1={scope['admin']['admin1_code']} / tz={scope['timezone']} ({scope['timezone_precision']})")
     for c in scope["counties"]:
         log(f"  县 {c['fips']} {c['name']:<28} NAD={c['nad_rows']:>7}  addrfeat={c['addrfeat']}")
     return 0
