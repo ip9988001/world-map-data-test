@@ -1,3 +1,13 @@
-# Dover 取样机器人依赖（全部纯 pip wheel，CI 不编译）
-overturemaps>=0.9.0    # Overture Maps 官方 CLI：--bbox 云端切片
+# 二仓（Gold Lake）加工依赖 —— 全部纯 pip wheel，CI 不编译
+#
+# 上游取数依赖（历史任务保留，新一仓已接管取数，二仓只读 Release）
+overturemaps>=0.9.0    # Overture Maps 官方 CLI（历史 Dover/Delaware 取数用）
 pyshp>=2.3.1           # 读 TIGER/Line 的 .dbf/.shp（不装 GDAL）
+
+# 本阶段（v2 加工）新增
+duckdb>=1.1.0          # 读一仓 OVERTURE-US-<ST>.parquet（geoparquet 列式）。
+                       # 必需：一仓只发 geoparquet，不装则 Overture 整源不可用。
+                       # 同时承担「ndjson.gz 核对后导出 parquet 副产物」的职责。
+#
+# 明确禁止（架构裁决 2026-10-18）
+#   shapely / rtree —— 空间索引一律复用引擎内自带的网格索引 + point_in_rings()

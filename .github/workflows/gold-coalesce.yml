@@ -1,0 +1,178 @@
+name: gold-coalesce
+
+# 二仓 · Gold 层加工流水线（schema 2.0）
+#
+# 输入：一仓 Release raw-US-<ST>-v1（只读，绝不改动一仓）
+# 输出：二仓 Release gold-US-<ST>-v1
+#       资产 ADDR-US-<ST>-<fips>-<county_key>.ndjson.gz + MANIFEST.json + STATUS.json
+#
+# 铁律
+#   1) 所有下载/加工都在 runner（本机零下载）
+#   2) 单 Job 顺序跑多县，共享同一份 Overture/OA/ZCTA 本地缓存
+#   3) 分源独立记账：NAD/OA/OVT 三本账各自守恒，任一不守恒 → 不发版（exit 1）
+#   4) 严禁 INSTALL spatial / shapely / geopandas / rtree
+
+on:
+  workflow_dispatch:
+    inputs:
+      state:
+        description: 两位州码
+        default: SD
+      tag:
+        description: 一仓原始数据 tag
+        default: raw-US-SD-v1
+      counties:
+        description: 逗号分隔县 FIPS（空=全州所有有数据的县）
+        default: "46053,46083"
+      publish:
+        description: 是否发 Release（true/false）
+        default: "true"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gold-coalesce-${{ github.event.inputs.state }}
+  cancel-in-progress: false
+
+jobs:
+  gold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      ST: ${{ github.event.inputs.state }}
+      RAW_TAG: ${{ github.event.inputs.tag }}
+      COUNTIES: ${{ github.event.inputs.counties }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 装依赖（pyshp + duckdb + PyYAML；不装 GIS 运行时）
+        run: pip install "pyshp>=2.3.1" "duckdb>=1.1.0" "PyYAML>=6.0"
+
+      - name: 拉取一仓 raw 资产（只读）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p "data/raw/US-$ST"
+          gh release download "$RAW_TAG" -R "${{ github.repository_owner }}/World-US-Map-Data" \
+            -D "data/raw/US-$ST" --clobber
+          du -sh "data/raw/US-$ST"
+          ls "data/raw/US-$ST" | head -5
+
+      - name: 生成 scope（MANIFEST + roster + registry → 任务上下文）
+        run: |
+          python3 scripts/gold_scope.py \
+            --state "$ST" \
+            --raw-dir "data/raw/US-$ST" \
+            --out "data/gold/US-$ST/scope.json" ${COUNTIES:+--counties "$COUNTIES"}
+
+      - name: 自取 ZCTA5（按 NAD 实测邮编区间，二仓自闭环）
+        id: zcta
+        run: |
+          RANGE=$(python3 - <<'PY'
+          import gzip, json, os
+          from pathlib import Path
+          st = os.environ["ST"]
+          scope = json.loads(Path(f"data/gold/US-{st}/scope.json").read_text())
+          zips = set()
+          for c in scope["counties"]:
+              p = Path(f"data/raw/US-{st}") / c["nad_file"]
+              with gzip.open(p, "rt") as fh:
+                  for line in fh:
+                      z = str(json.loads(line).get("Zip_Code") or "").strip()
+                      if len(z) == 5 and z.isdigit():
+                          zips.add(z)
+          if not zips:
+              print("")
+          else:
+              print(f"{min(zips)}-{max(zips)}")
+          PY
+          )
+          echo "zcta_range=$RANGE" >> "$GITHUB_OUTPUT"
+          mkdir -p "data/cache/US-$ST"
+          if [ -n "$RANGE" ]; then
+            python3 scripts/zcta_fetch.py --state "$ST" --zcta-range "$RANGE" --out "data/cache/US-$ST"
+          else
+            echo "⚠️ NAD 里没有可用邮编，跳过 ZCTA（zip_source 将为 null）"
+          fi
+
+      - name: 加工（四栏漏斗 + 分源守恒）
+        run: |
+          python3 scripts/gold_coalesce.py \
+            --scope "data/gold/US-$ST/scope.json" \
+            --raw-dir "data/raw/US-$ST" \
+            --cache "data/cache/US-$ST" \
+            --out "data/gold/US-$ST" \
+            ${COUNTIES:+--counties "$COUNTIES"}
+
+      - name: 发布门禁（守恒 + ISO 门禁）
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          from pathlib import Path
+          st = __import__("os").environ["ST"]
+          p = Path(f"data/gold/US-{st}/MANIFEST.json")
+          if not p.exists():
+              print("❌ MANIFEST 未生成"); sys.exit(1)
+          m = json.loads(p.read_text())
+          bad = [c["county"] for c in m["counties"] if not c.get("conservation_ok")]
+          print("== 分源守恒 ==")
+          for c in m["counties"]:
+              print(f"  {c['county']} {c['county_name']:<20} out={c['output_rows']:>7} "
+                    f"NAD={c['nad_input']:>7} OA={c['oa_input']:>7} OVT={c['ovt_input']:>7} "
+                    f"守恒={c.get('conservation_ok')} 档位={c.get('tiers')}")
+          print("== 合计 ==", json.dumps(m["totals"], ensure_ascii=False))
+          print("== admin1 ==", m["admin"]["admin1_code"], m["admin"]["admin1_name"])
+          if bad:
+              print(f"❌ 守恒失败，禁止发版：{bad}"); sys.exit(1)
+          print("✅ 门禁通过")
+          PY
+
+      - name: 发 Release（gold-US-<ST>-v1）
+        if: ${{ success() && github.event.inputs.publish != 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="gold-US-$ST-v1"          mkdir -p "data/gold/US-$ST/_rel"
+          cp "data/gold/US-$ST"/*.ndjson.gz "data/gold/US-$ST/MANIFEST.json" \
+             "data/gold/US-$ST/STATUS.json" "data/gold/US-$ST/_rel/" 2>/dev/null || true
+          python3 - <<'PY' > "data/gold/US-$ST/_rel/RELEASE_NOTES.md"
+          import json, os
+          from pathlib import Path
+          st = os.environ["ST"]
+          m = json.loads(Path(f"data/gold/US-{st}/MANIFEST.json").read_text())
+          print(f"# gold-US-{st}-v1 · 精品地址库（schema {m['schema_version']}）\n")
+          print(f"- 生成：{m['generated_at']}（runner）")
+          print(f"- 上游：一仓 `raw-US-{st}-v1`（一仓 runner={m['source_manifest'].get('runner')}）")
+          print(f"- 口径：NAD 主干 + TIGER 60m 号段校验 + OA 独立票；Overture 仅溯源不计票")
+          print(f"- 合计：{m['totals']['output_rows']:,} 行 / {m['totals']['counties']} 县")
+          print(f"- ISO：{m['admin']['admin1_code']} · {m['admin']['admin1_name']} · {m['admin']['country_code_alpha3']}")
+          print("\n| 县 | 输出行 | NAD | OA | OVT | S/A/B |\n|---|---|---|---|---|---|")
+          for c in m["counties"]:
+              t = c.get("tiers") or {}
+              print(f"| {c['county']} {c['county_name']} | {c['output_rows']:,} | {c['nad_input']:,} | "
+                    f"{c['oa_input']:,} | {c['ovt_input']:,} | {t.get('S',0)}/{t.get('A',0)}/{t.get('B',0)} |")
+          PY
+          gh release view "$TAG" -R "${{ github.repository }}" >/dev/null 2>&1 \
+            || gh release create "$TAG" -R "${{ github.repository }}" \
+                 --title "gold-US-$ST-v1 · 精品地址库" \
+                 --notes-file "data/gold/US-$ST/_rel/RELEASE_NOTES.md"
+          gh release upload "$TAG" -R "${{ github.repository }}" \
+            "data/gold/US-$ST/_rel"/* --clobber
+          gh release view "$TAG" -R "${{ github.repository }}" --json assets \
+            -q '.assets[] | "\(.size)\t\(.name)"'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gold-US-${{ github.event.inputs.state }}-${{ github.run_id }}
+          path: |
+            data/gold/US-*/MANIFEST.json
+            data/gold/US-*/STATUS.json
+            data/gold/US-*/*.ndjson.gz
+          retention-days: 30
