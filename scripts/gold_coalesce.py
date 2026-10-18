@@ -873,6 +873,7 @@ def main(argv=None) -> int:
         "note": "coverage 相对上游（一仓 NAD）声明，不是地理真值",
     }
     manifest["zero_nad_counties"] = zero
+    manifest["zcta_available"] = bool(zcta)
     (out_dir / "MANIFEST.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     (out_dir / "STATUS.json").write_text(json.dumps(
         {"generated_at": now_utc(), "state": scope["state"], "ok": ok,

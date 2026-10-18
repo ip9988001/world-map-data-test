@@ -63,6 +63,12 @@ jobs:
           du -sh "data/raw/US-$ST"
           ls "data/raw/US-$ST" | head -5
 
+      - name: 缓存层（ZCTA 面等跨 run 复用，避免每次重拉 TIGERweb）
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: gold-cache-${{ github.event.inputs.state }}-v1
+
       - name: 生成 scope（MANIFEST + roster + registry → 任务上下文）
         run: |
           python3 scripts/gold_scope.py \
@@ -95,7 +101,8 @@ jobs:
           echo "zcta_range=$RANGE" >> "$GITHUB_OUTPUT"
           mkdir -p "data/cache/US-$ST"
           if [ -n "$RANGE" ]; then
-            python3 scripts/zcta_fetch.py --state "$ST" --zcta-range "$RANGE" --out "data/cache/US-$ST"
+            python3 scripts/zcta_fetch.py --state "$ST" --zcta-range "$RANGE" --out "data/cache/US-$ST" \
+              || echo "⚠️ ZCTA 取数失败（TIGERweb 500/降级）→ 继续加工，zip_source 将为 null"
           else
             echo "⚠️ NAD 里没有可用邮编，跳过 ZCTA（zip_source 将为 null）"
           fi

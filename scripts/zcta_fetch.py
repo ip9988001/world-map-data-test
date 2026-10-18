@@ -117,9 +117,15 @@ def fetch(where: str, bbox: tuple | None, max_rows: int = 100000) -> list[dict]:
     seen: dict[str, dict] = {}
     offset = 0
     while True:
-        payload = query_page(where, offset, bbox)
-        if payload.get("error"):
-            raise RuntimeError(f"esri error: {payload['error']}")
+        payload = None
+        for attempt in range(3):
+            payload = query_page(where, offset, bbox)
+            if not payload.get("error"):
+                break
+            log(f"esri error {payload['error'].get('code')}，第 {attempt+1}/3 次重试…")
+            time.sleep(5 * (attempt + 1))
+        if payload is None or payload.get("error"):
+            raise RuntimeError(f"esri error: {payload and payload.get('error')}")
         batch = features_of(payload)
         for rec in batch:
             seen.setdefault(rec["zcta5"], rec)
