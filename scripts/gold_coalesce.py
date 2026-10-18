@@ -42,6 +42,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 GRID = 0.001                 # 网格边长 ~85m @ lat40
+UNSAFE = "__unsafe__"        # SpatialIndex 记忆化：边界格永不缓存结论
 MATCH_METERS = 60.0
 TIGER_METERS = 60.0
 
@@ -220,6 +221,7 @@ class SpatialIndex:
         self.items = {}
         self.grid = defaultdict(list)
         self.cell = cell
+        self._memo = {}
         for it in items:
             k = it[key_field]
             it["bbox"] = rings_bbox(it["rings"])
@@ -229,13 +231,38 @@ class SpatialIndex:
                 for gy in range(int(y0 // cell), int(y1 // cell) + 1):
                     self.grid[(gx, gy)].append(k)
 
-    def find(self, lon: float, lat: float):
+    def _exact(self, lon: float, lat: float):
         for k in self.grid.get((int(lon // self.cell), int(lat // self.cell)), ()):
             it = self.items[k]
             x0, y0, x1, y1 = it["bbox"]
             if x0 <= lon <= x1 and y0 <= lat <= y1 and point_in_rings(lon, lat, it["rings"]):
                 return k
         return None
+
+    def find(self, lon: float, lat: float):
+        """点位反查（带「安全格」记忆化）。
+
+        城市点位高度聚集在同一 110m 格内，重复做点在多边形测试是纯浪费。
+        但**不能**把首个点的结论直接缓存给整格 —— 边界格会串县（实测 SD 会错 213 行）。
+        做法：仅当格的 4 角 + 中心 5 个采样点结论一致时，才认定为「安全格」并缓存；
+        边界格标记为 unsafe，永远走精确路径。
+        """
+        gx, gy = int(lon // self.cell), int(lat // self.cell)
+        gk = (gx, gy)
+        st = self._memo.get(gk)
+        if st is not None:
+            if st is UNSAFE:
+                return self._exact(lon, lat)
+            return st
+        x0, y0 = gx * self.cell, gy * self.cell
+        x1, y1 = x0 + self.cell, y0 + self.cell
+        probes = [self._exact(x0, y0), self._exact(x1, y0), self._exact(x0, y1),
+                  self._exact(x1, y1), self._exact(x0 + self.cell / 2, y0 + self.cell / 2)]
+        if probes[0] is not None and len(set(probes)) == 1:
+            self._memo[gk] = probes[0]
+            return self._exact(lon, lat) if False else self._memo[gk]
+        self._memo[gk] = UNSAFE
+        return self._exact(lon, lat)
 
 
 # ---------------------------------------------------------------- 读取：边界 / ZCTA / places
@@ -436,6 +463,91 @@ def read_overture_slice(parquet: Path, bbox: tuple) -> list[dict]:
     return rows
 
 
+# ---------------------------------------------------------------- 读取：Overture（全州一次切片，分县分桶）
+def bucket_overture(parquet: Path, county_index: SpatialIndex, cache_dir: Path,
+                    write_fips: set, state_bbox: tuple) -> tuple[dict, int]:
+    """全州只扫一次 parquet（O(1) 次扫描），按县多边形分桶落 ndjson.gz。
+
+    ⚠️ 旧实现是「每县一次 duckdb 查询」，AR(275MB × 75 县) 单这一项就吃掉 20 分钟。
+    这里复用 OA 已验证的「一次扫描 + 分桶」模式：扫描次数从 N 县降到 1 次。
+    """
+    import duckdb
+    pkg_dir = cache_dir / "overture"
+    pkg_dir.mkdir(parents=True, exist_ok=True)
+    targets = {f: pkg_dir / f"ovt-US-{f}.ndjson.gz" for f in write_fips}
+    if all(p.exists() for p in targets.values()):
+        log(f"Overture 分桶缓存命中（{len(targets)} 县）")
+        return {f: sum(1 for _ in gzip.open(p, "rt")) for f, p in targets.items()}, 0
+
+    w, s, e, n = state_bbox
+    sql = f"""
+        SELECT id, number, street, unit, postcode, postal_city, address_levels,
+               sources[1].dataset AS src_ds,
+               cast(geometry AS VARCHAR) AS geom
+        FROM read_parquet('{parquet.as_posix()}')
+        WHERE bbox.xmin >= {w} AND bbox.xmax <= {e}
+          AND bbox.ymin >= {s} AND bbox.ymax <= {n}
+    """
+    con = duckdb.connect()
+    cur = con.execute(sql)
+    handles = {}
+    counts = Counter()
+    total = 0
+    outside = 0
+    while True:
+        chunk = cur.fetchmany(20000)
+        if not chunk:
+            break
+        for (oid, number, street, unit, postcode, postal_city, levels, src_ds, geom) in chunk:
+            total += 1
+            m = POINT_RE.search(geom or "")
+            if not m:
+                continue
+            lon, lat = float(m.group(1)), float(m.group(2))
+            fips = county_index.find(lon, lat)
+            if not fips:
+                outside += 1
+                continue
+            if fips not in write_fips:
+                counts[fips] += 1          # 0-NAD 县只计数
+                continue
+            if fips not in handles:
+                handles[fips] = gzip.open(targets[fips], "wt", encoding="utf-8")
+            rec = {
+                "id": oid, "number": number, "street": street, "unit": unit,
+                "postcode": postcode, "postal_city": postal_city,
+                "levels": [x.get("value") for x in (levels or []) if isinstance(x, dict)],
+                "upstream": src_ds, "lon": lon, "lat": lat,
+            }
+            handles[fips].write(json.dumps(rec, ensure_ascii=False, separators=(",", ":")) + "\n")
+            counts[fips] += 1
+    for h in handles.values():
+        h.close()
+    con.close()
+    log(f"Overture 单次扫描 {total:,} 行 → 分桶 {len(handles)} 县，"
+        f"县内 {sum(v for k, v in counts.items() if k in write_fips):,} 行，州外/海上 {outside:,} 行")
+    return dict(counts), outside
+
+
+def read_ovt_bucket(cache_dir: Path, fips: str) -> list[dict]:
+    path = cache_dir / "overture" / f"ovt-US-{fips}.ndjson.gz"
+    if not path.exists():
+        return []
+    out = []
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            r = json.loads(line)
+            r["num"] = parse_number(r.get("number"))
+            r["skey"] = street_key(r.get("street"))
+            r["unit_k"], r["ukey"] = norm_unit(r.get("unit"))
+            r["zip5"] = clean_str(r.get("postcode"))
+            r["city"] = clean_str(r.get("postal_city"))
+            out.append(r)
+    return out
+
+
 # ---------------------------------------------------------------- 读取：TIGER addrfeat
 def read_addrfeat(zip_path: Path) -> list[dict]:
     import shapefile
@@ -581,9 +693,8 @@ def process_county(scope: dict, county: dict, raw_dir: Path, cache_dir: Path,
     funnel["oa_absorbed"] = sum(oa_votes.values())
     funnel["oa_dedup"] = oa_dedup
 
-    # ---- Overture（bbox 切片 + 县多边形过滤）
-    w, s, e, n = rings_bbox(county_rings) if county_rings else (0, 0, 0, 0)
-    ovt_rows = read_overture_slice(raw_dir / scope["assets"]["overture"], (w, s, e, n))
+    # ---- Overture（读全州一次性分桶；旧实现是每县一次 parquet 扫描，AR 上慢 20 分钟）
+    ovt_rows = read_ovt_bucket(cache_dir, fips)
     funnel["ovt_input"] = len(ovt_rows)
     ovt_bad = Counter()
     ovt_votes = Counter()
@@ -592,9 +703,6 @@ def process_county(scope: dict, county: dict, raw_dir: Path, cache_dir: Path,
     for r in ovt_rows:
         if not r["num"] or not r["skey"]:
             ovt_bad["missing_number_or_street"] += 1
-            continue
-        if county_rings and not point_in_rings(r["lon"], r["lat"], county_rings):
-            ovt_bad["out_of_bounds"] += 1
             continue
         k = addr_key(r["num"], r["skey"], r["ukey"])
         if k in ovt_seen:
@@ -838,6 +946,12 @@ def main(argv=None) -> int:
     log(f"OA 分桶就绪：有 NAD 县 {sum(oa_buckets.get(f, 0) for f in write_fips)} 行 / "
         f"0-NAD 县 {sum((c.get('oa_rows') or 0) for c in zero)} 行 / {round(time.time()-t_start,1)}s")
 
+    # Overture：全州一次扫描 + 分县分桶（关键性能改造）
+    sb = scope.get("bbox") or rings_bbox([p for c in county_shapes for p in [x for r in c["rings"] for x in r]])
+    ovt_counts, ovt_outside = bucket_overture(raw_dir / scope["assets"]["overture"],
+                                              county_index, cache, write_fips, tuple(sb))
+    log(f"Overture 分桶就绪：{round(time.time()-t_start,1)}s")
+
     zcta = load_zcta(cache / f"zcta-US-{scope['state']}.ndjson.gz")
     zcta_idx = SpatialIndex(zcta, "zcta5") if zcta else None
     places = load_places(raw_dir / scope["assets"]["places"]) if scope["assets"].get("places") else []
@@ -865,6 +979,9 @@ def main(argv=None) -> int:
             "oa_input": sum(r["oa_input"] for r in results),
             "ovt_input": sum(r["ovt_input"] for r in results),
             "oa_in_zero_nad_counties": sum((c.get("oa_rows") or 0) for c in zero),
+            "ovt_out_of_state": ovt_outside,
+            "ovt_input_note": "v2.1 起 Overture 为「全州一次扫描 + 按县多边形分桶」，ovt_input = 落在该县境内行数；"
+                              "州 bbox 内但不属任何县的行单列在 ovt_out_of_state",
             "conservation_ok": ok,
         },
     }
