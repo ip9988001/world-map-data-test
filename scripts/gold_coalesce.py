@@ -701,7 +701,8 @@ def process_county(scope: dict, county: dict, raw_dir: Path, cache_dir: Path,
             # --- provenance ---
             "addr_id": aid, "zip_source": zip_src,
             "postal_city_source": pc_src, "municipal_city_source": mc_src,
-            "source_confidence_detail": "S-Tier: " + "+".join(detail),
+            "source_confidence_detail": {"S": "S-Tier", "A": "A-Tier", "B": "B-Tier"}[tier]
+                                       + ": " + "+".join(detail),
             "src_nad_uuid": raw.get("UUID"), "src_nad_objectid": raw.get("OBJECTID"),
             "src_oa_hash": oa_meta.get(k, {}).get("hash") if k in oa_meta else None,
             "src_overture_id": ovt_meta.get(k, {}).get("id") if k in ovt_meta else None,
