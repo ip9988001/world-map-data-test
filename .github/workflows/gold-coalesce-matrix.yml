@@ -1,0 +1,58 @@
+name: gold-coalesce-matrix
+
+# 二仓 · 批量铺州（一次 dispatch 跑多州，每州独立 tag / 独立 Release，互不影响）
+# 前置：每州的一仓 Release 必须已终态封印（内层 preflight 会逐州把关，未封印自动拒绝）
+
+on:
+  workflow_dispatch:
+    inputs:
+      states:
+        description: 逗号分隔州码（如 AL,CO,CT,IA,ID,KS）
+        required: true
+      tag_prefix:
+        description: 一仓 tag 前缀（默认 raw-US-，自动拼 <ST>-v1）
+        default: "raw-US-"
+      publish:
+        description: 是否发 Release（true/false）
+        default: "true"
+      workers:
+        description: 每州按县并行进程数
+        default: "4"
+      max_parallel:
+        description: 同时跑几个州
+        default: "3"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gold-matrix
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      states: ${{ steps.p.outputs.states }}
+    steps:
+      - id: p
+        run: |
+          S=$(echo "${{ inputs.states }}" | tr ',' ' ' | tr 'a-z' 'A-Z')
+          J=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1:]))" $S)
+          echo "states=$J" >> "$GITHUB_OUTPUT"
+          echo "计划州：$J"
+
+  gold:
+    needs: plan
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.max_parallel) }}
+      matrix:
+        state: ${{ fromJSON(needs.plan.outputs.states) }}
+    uses: ./.github/workflows/gold-coalesce.yml
+    with:
+      state: ${{ matrix.state }}
+      tag: ${{ inputs.tag_prefix }}${{ matrix.state }}-v1
+      counties: ""
+      publish: ${{ inputs.publish }}
+      workers: ${{ inputs.workers }}

@@ -475,9 +475,11 @@ def bucket_overture(parquet: Path, county_index: SpatialIndex, cache_dir: Path,
     pkg_dir = cache_dir / "overture"
     pkg_dir.mkdir(parents=True, exist_ok=True)
     targets = {f: pkg_dir / f"ovt-US-{f}.ndjson.gz" for f in write_fips}
+    stats_path = pkg_dir / "_stats.json"
     if all(p.exists() for p in targets.values()):
-        log(f"Overture 分桶缓存命中（{len(targets)} 县）")
-        return {f: sum(1 for _ in gzip.open(p, "rt")) for f, p in targets.items()}, 0
+        st = json.loads(stats_path.read_text()) if stats_path.exists() else {}
+        log(f"Overture 分桶缓存命中（{len(targets)} 县，州外 {st.get('outside', 0):,} 行）")
+        return {f: sum(1 for _ in gzip.open(p, "rt")) for f, p in targets.items()}, st.get("outside", 0)
 
     w, s, e, n = state_bbox
     sql = f"""
@@ -524,6 +526,7 @@ def bucket_overture(parquet: Path, county_index: SpatialIndex, cache_dir: Path,
     for h in handles.values():
         h.close()
     con.close()
+    stats_path.write_text(json.dumps({"total": total, "outside": outside}), encoding="utf-8")
     log(f"Overture 单次扫描 {total:,} 行 → 分桶 {len(handles)} 县，"
         f"县内 {sum(v for k, v in counts.items() if k in write_fips):,} 行，州外/海上 {outside:,} 行")
     return dict(counts), outside
@@ -885,6 +888,16 @@ def process_county(scope: dict, county: dict, raw_dir: Path, cache_dir: Path,
     return funnel
 
 
+# ---------------------------------------------------------------- 多进程（按县并行）
+_W = {}
+
+
+def _worker_run(county: dict) -> dict:
+    """子进程入口：globals 由 fork 继承（Linux），避免把 ZCTA/places 索引 pickle 过去。"""
+    return process_county(_W["scope"], county, _W["raw"], _W["cache"], _W["oa"],
+                          _W["zcta"], _W["places"], county["rings"], _W["out"])
+
+
 # ---------------------------------------------------------------- main
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="二仓 Gold 层引擎 v2")
@@ -893,6 +906,8 @@ def main(argv=None) -> int:
     ap.add_argument("--cache", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--counties", help="逗号分隔 fips，覆盖 scope")
+    ap.add_argument("--workers", type=int, default=0,
+                    help="按县并行的进程数；0=自动（min(4, CPU)，单核按 1 跑）")
     args = ap.parse_args(argv)
 
     scope = json.loads(Path(args.scope).read_text(encoding="utf-8"))
@@ -961,10 +976,21 @@ def main(argv=None) -> int:
     place_idx = SpatialIndex(places, "place") if places else None
     log(f"ZCTA 面 {len(zcta)} / places {len(places)} / {round(time.time()-t_start,1)}s")
 
-    results = []
-    for c in counties:
-        results.append(process_county(scope, c, raw_dir, cache, oa_buckets,
-                                      zcta_idx, place_idx, c["rings"], out_dir))
+    workers = args.workers or min(4, __import__("os").cpu_count() or 1)
+    workers = max(1, min(workers, len(counties)))
+    if workers > 1:
+        import multiprocessing as mp
+        _W.update(scope=scope, raw=raw_dir, cache=cache, oa=oa_buckets,
+                  zcta=zcta_idx, places=place_idx, out=out_dir)
+        log(f"按县并行：{workers} 个进程 / {len(counties)} 县（fork 继承空间索引，不重复加载）")
+        ctx = mp.get_context("fork")
+        with ctx.Pool(processes=workers) as pool:
+            results = pool.map(_worker_run, counties)
+    else:
+        results = []
+        for c in counties:
+            results.append(process_county(scope, c, raw_dir, cache, oa_buckets,
+                                          zcta_idx, place_idx, c["rings"], out_dir))
 
     ok = all(r["conservation_ok"] for r in results)
     manifest = {

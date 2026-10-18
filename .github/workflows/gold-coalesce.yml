@@ -13,6 +13,27 @@ name: gold-coalesce
 #   4) 严禁 INSTALL spatial / shapely / geopandas / rtree
 
 on:
+  workflow_call:
+    inputs:
+      state:
+        type: string
+        required: true
+      tag:
+        type: string
+        required: false
+        default: ""
+      counties:
+        type: string
+        required: false
+        default: ""
+      publish:
+        type: string
+        required: false
+        default: "true"
+      workers:
+        type: string
+        required: false
+        default: "4"
   workflow_dispatch:
     inputs:
       state:
@@ -27,12 +48,15 @@ on:
       publish:
         description: 是否发 Release（true/false）
         default: "true"
+      workers:
+        description: 按县并行进程数（0=自动 min(4,CPU)）
+        default: "4"
 
 permissions:
   contents: write
 
 concurrency:
-  group: gold-coalesce-${{ github.event.inputs.state }}
+  group: gold-coalesce-${{ inputs.state }}
   cancel-in-progress: false
 
 jobs:
@@ -40,9 +64,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
-      ST: ${{ github.event.inputs.state }}
-      RAW_TAG: ${{ github.event.inputs.tag }}
-      COUNTIES: ${{ github.event.inputs.counties }}
+      ST: ${{ inputs.state }}
+      RAW_TAG: ${{ inputs.tag }}
+      COUNTIES: ${{ inputs.counties }}
+      WORKERS: ${{ inputs.workers || '4' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -81,7 +106,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/cache
-          key: gold-cache-${{ github.event.inputs.state }}-v1
+          key: gold-cache-${{ inputs.state }}-v1
 
       - name: 生成 scope（MANIFEST + roster + registry → 任务上下文）
         run: |
@@ -128,6 +153,7 @@ jobs:
             --raw-dir "data/raw/US-$ST" \
             --cache "data/cache/US-$ST" \
             --out "data/gold/US-$ST" \
+            --workers "$WORKERS" \
             ${COUNTIES:+--counties "$COUNTIES"}
 
       - name: 发布门禁（守恒 + ISO 门禁）
@@ -218,7 +244,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gold-US-${{ github.event.inputs.state }}-${{ github.run_id }}
+          name: gold-US-${{ inputs.state }}-${{ github.run_id }}
           path: |
             data/gold/US-*/MANIFEST.json
             data/gold/US-*/STATUS.json
