@@ -251,3 +251,18 @@ jobs:
             data/gold/US-*/STATUS.json
             data/gold/US-*/*.ndjson.gz
           retention-days: 30
+
+      - name: 上报哨兵
+        if: always()
+        env:
+          SENTINEL_URL: ${{ secrets.SENTINEL_URL }}
+          SENTINEL_TOKEN: ${{ secrets.SENTINEL_TOKEN }}
+        run: |
+          ST="${{ inputs.state }}"
+          if [ "${{ job.status }}" = "success" ]; then EVT=gold_sealed; else EVT=alarm; fi
+          if [ -z "$SENTINEL_URL" ]; then echo "无哨兵地址，跳过"; exit 0; fi
+          curl -s -m 10 -X POST "$SENTINEL_URL" \
+            -H "X-Sentinel-Token: $SENTINEL_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "{\"evt\":\"$EVT\",\"repo\":\"ip9988001/world-map-data-test\",\"state\":\"$ST\",\"tag\":\"gold-US-$ST-v1\",\"stage\":\"gold_${{ job.status }}\",\"msg\":\"二仓加工 ${{ job.status }}\"}" \
+            || echo "上报失败（不影响主流程）"

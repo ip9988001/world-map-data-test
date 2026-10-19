@@ -654,6 +654,11 @@ def process_county(scope: dict, county: dict, raw_dir: Path, cache_dir: Path,
 
     # ---- NAD
     nad_rows = read_nad(raw_dir / county["nad_file"])
+    if county.get("nad_from_overflow"):
+        want = (county.get("name") or "").strip().lower()
+        before = len(nad_rows)
+        nad_rows = [r for r in nad_rows if (r.get("county") or "").strip().lower() == want]
+        funnel["nad_source"] = f"overflow_by_county_field({len(nad_rows)}/{before})"
     funnel["nad_input"] = len(nad_rows)
     nad_bad = Counter()
     nad_clean = []
@@ -664,7 +669,8 @@ def process_county(scope: dict, county: dict, raw_dir: Path, cache_dir: Path,
         if r["lon"] is None or r["lat"] is None:
             nad_bad["coord_null"] += 1
             continue
-        if county_rings and not point_in_rings(r["lon"], r["lat"], county_rings):
+        if (county_rings and not county.get("nad_from_overflow")
+                and not point_in_rings(r["lon"], r["lat"], county_rings)):
             nad_bad["out_of_bounds"] += 1
             continue
         nad_clean.append(r)

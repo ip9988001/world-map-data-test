@@ -135,13 +135,42 @@ def build_scope(state: str, raw_dir: Path, roster_path: Path, reg_path: Path,
 
     if not assets.get("overture"):
         raise KeyError("MANIFEST 里没有 OVERTURE-US-<ST>.parquet")
+    overflow_mode = False
+    overflow_file = ""
     if not assets["nad"]:
-        raise KeyError("MANIFEST 里没有任何 NAD 县片")
+        # 兼容 overflow-only 州：NH 实测 NAD 10 个县全判 counties_empty，
+        # 354,804 行全部落在 OUTOFSTATE 溢出包里（一仓县界与点不匹配）。
+        # 这类州不能直接拒跑 —— 改成按 NAD 原生 County 字段分县，并标记未做空间核验。
+        ovf = [s for s in (manifest.get("shards") or [])
+               if s.get("kind") == "overflow" and (s.get("rows") or 0) > 0]
+        if not ovf:
+            raise KeyError("MANIFEST 里没有任何 NAD 分片（county 与 overflow 都空）")
+        overflow_file = (ovf[0].get("file") or "").rsplit("/", 1)[-1]
+        if not overflow_file:
+            raise KeyError("overflow 分片缺 file 字段")
+        overflow_mode = True
+        log(f"⚠️ 无 county 分片 → 改用 overflow 包按 County 字段分县："
+            f"{overflow_file}（{ovf[0].get('rows'):,} 行，不做空间核验）")
 
     # 县清单：以 MANIFEST.shards 为准（有行数的县才做），roster 只提供名字
     shards = [s for s in (manifest.get("shards") or [])
               if s.get("kind") == "county" and (s.get("rows") or 0) > 0]
     counties = []
+    if overflow_mode:
+        for c in (r.get("counties") or []):
+            fips = str(c.get("fips") or c.get("county_fips") or "").strip()
+            if not fips:
+                continue
+            if only_counties and fips not in only_counties:
+                continue
+            counties.append({
+                "fips": fips, "key": c.get("key"), "name": c.get("name"),
+                "nad_rows": None, "nad_file": overflow_file,
+                "addrfeat": assets["tiger_addrfeat"].get(fips),
+                "county_geo": assets["tiger_county"].get(fips),
+                "nad_from_overflow": True,
+            })
+        shards = []
     for s in sorted(shards, key=lambda x: x["county_fips"]):
         fips = s["county_fips"]
         if only_counties and fips not in only_counties:
