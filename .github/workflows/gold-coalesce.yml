@@ -90,9 +90,18 @@ jobs:
           ls -la "data/raw/US-$ST/MANIFEST.json" 2>/dev/null || true
 
       - name: 前置核验（一仓终态封印，未封印直接拒绝开跑）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RAW_REPO: ${{ github.repository_owner }}/World-US-Map-Data
         run: |
+          # ★ 实物清单：不信单一账本。一仓断点续传/多次补跑时 MANIFEST 可能漏记
+          #   shards（AK）或 addrfeat（ID）—— 以 Release 里真实存在的资产为准。
+          gh release view "$RAW_TAG" -R "$RAW_REPO" --json assets \
+            -q '.assets[]|"\(.name)\t\(.size)"' > "data/raw/US-$ST/assets.txt" 2>/dev/null || true
+          echo "Release 实物资产：$(wc -l < "data/raw/US-$ST/assets.txt" 2>/dev/null || echo 0) 个"
           python3 scripts/gold_preflight.py --state "$ST" \
-            --raw-dir "data/raw/US-$ST" --json-out "data/gold/US-$ST/preflight.json"
+            --raw-dir "data/raw/US-$ST" --assets "data/raw/US-$ST/assets.txt" \
+            --json-out "data/gold/US-$ST/preflight.json"
 
       - name: 拉取一仓 raw 全量资产（只读）
         env:

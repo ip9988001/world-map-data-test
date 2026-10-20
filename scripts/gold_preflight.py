@@ -31,12 +31,26 @@ def log(msg: str) -> None:
     print(f"[preflight] {msg}", flush=True)
 
 
-def check(manifest_path: Path, expect_state: str | None) -> tuple[str, list[str], list[str]]:
-    """返回 (status, errors, warns)"""
+def check(manifest_path: Path, expect_state: str | None,
+          assets_file: Path | None = None) -> tuple[str, list[str], list[str]]:
+    """返回 (status, errors, warns)
+
+    assets_file（可选）：`gh release view --json assets` 导出的实物清单（每行 `名字\t大小`）。
+    为什么需要：一仓是「边抓边传 + 断点续传」的，MANIFEST 记账可能漏记实物
+    —— AK 的 shards 为空但 Release 里 23 个县片都在；ID 的 assets 漏记 addrfeat 但实物 43 个在。
+    只信账本 → 把好数据挡在门外；以实物为准 → 账本缺失降为 warning。
+    """
     errors: list[str] = []
     warns: list[str] = []
     if not manifest_path.exists():
         return "missing", [f"MANIFEST 不存在：{manifest_path}"], warns
+
+    actual: list[str] = []
+    if assets_file and assets_file.exists():
+        for line in assets_file.read_text(encoding="utf-8", errors="replace").splitlines():
+            n = line.strip().split("\t")[0].strip()
+            if n:
+                actual.append(n.rsplit("/", 1)[-1])
 
     try:
         m = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -79,8 +93,15 @@ def check(manifest_path: Path, expect_state: str | None) -> tuple[str, list[str]
 
     # C5
     shards = [s for s in (m.get("shards") or []) if s.get("kind") == "county"]
+    if not shards and actual:
+        # ★ 记账自愈：MANIFEST.shards 漏写，但 Release 里县片实物在（NAD-<ST>-<fips>-<key>.ndjson.gz）
+        for n in actual:
+            if n.startswith("NAD-") and n.endswith(".ndjson.gz") and n.count("-") >= 3:
+                shards.append({"kind": "county", "file": n, "rows": None})
+        if shards:
+            warns.append(f"MANIFEST.shards 缺失，已从 Release 实物重建 {len(shards)} 个县片（账可补，数据不丢）")
     if not shards:
-        errors.append("C5 失败：没有任何 county 分片")
+        errors.append("C5 失败：没有任何 county 分片（账本与实物都没有）")
     nad_local = (m.get("completeness") or {}).get("nad", {}).get("local_rows")
     union_ids = rc.get("county_union_ids")
     overflow = rc.get("overflow_ids")
@@ -93,6 +114,8 @@ def check(manifest_path: Path, expect_state: str | None) -> tuple[str, list[str]
     shard_rows = sum((s.get("rows") or 0) for s in shards)
     src = m.get("assets") or []
     names = [a["path"].rsplit("/", 1)[-1] for a in src]
+    if actual:                                  # 账本 ∪ 实物：只信账本会漏尽断点续传的产物
+        names = sorted(set(names) | set(actual))
     if not any(n.endswith(".parquet") for n in names):
         errors.append("C5 失败：Release 里没有 OVERTURE parquet")
     nad_shard_names = [n for n in names if n.startswith("NAD-") and n.endswith(".ndjson.gz")]
@@ -114,10 +137,13 @@ def main(argv=None) -> int:
     ap.add_argument("--manifest", help="MANIFEST.json 路径")
     ap.add_argument("--raw-dir", help="等价写法：<raw-dir>/MANIFEST.json")
     ap.add_argument("--json-out", help="把结论写成 json（供 workflow 消费）")
+    ap.add_argument("--assets", help="Release 实物清单（每行 名字\\t大小）；缺省时试 <raw-dir>/assets.txt")
     args = ap.parse_args(argv)
 
     mpath = Path(args.manifest) if args.manifest else Path(args.raw_dir or ".") / "MANIFEST.json"
-    status, errors, warns = check(mpath, args.state)
+    apath = Path(args.assets) if args.assets else (
+        Path(args.raw_dir) / "assets.txt" if args.raw_dir else None)
+    status, errors, warns = check(mpath, args.state, apath)
     for w in warns:
         log(f"⚠️ {w}")
     for e in errors:
