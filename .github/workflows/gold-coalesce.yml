@@ -99,6 +99,13 @@ jobs:
           gh release view "$RAW_TAG" -R "$RAW_REPO" --json assets \
             -q '.assets[]|"\(.name)\t\(.size)"' > "data/raw/US-$ST/assets.txt" 2>/dev/null || true
           echo "Release 实物资产：$(wc -l < "data/raw/US-$ST/assets.txt" 2>/dev/null || echo 0) 个"
+          # ★ 先按实物把账本补全（一仓断点续传会漏记 shards/assets），下游 scope/coalesce 才不会再炸
+          gh release download "$RAW_TAG" -R "$RAW_REPO" -D "data/raw/US-$ST" \
+            -p STATUS.json --clobber 2>/dev/null || true
+          python3 scripts/manifest_heal.py \
+            --manifest "data/raw/US-$ST/MANIFEST.json" \
+            --assets "data/raw/US-$ST/assets.txt" \
+            --status "data/raw/US-$ST/STATUS.json" || true
           python3 scripts/gold_preflight.py --state "$ST" \
             --raw-dir "data/raw/US-$ST" --assets "data/raw/US-$ST/assets.txt" \
             --json-out "data/gold/US-$ST/preflight.json"
