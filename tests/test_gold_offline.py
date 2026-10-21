@@ -23,6 +23,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 import gold_scope      # noqa: E402
+import merge_volume_manifests as mvm  # noqa: E402
 import gold_preflight  # noqa: E402
 
 try:                                     # coalesce 依赖较重，能导入就测，导不进就跳过
@@ -205,6 +206,47 @@ def main() -> int:
     print(f"  T7: {r7}")
     print("T7 判定：", "✅ 通过" if results["T7"]
           else f"❌ 失败 {[k for k, v in r7.items() if not v]}")
+
+    # ---- T8 分卷账本合并（G6）----
+    v1 = {"generated_at": "2026-10-21T00:00:00Z",
+          "scope": {"state": "DE", "counties": [{"fips": "10001", "key": "kent"}]},
+          "assets": [{"path": "nad/NAD-US-DE-10001-kent.ndjson.gz"},
+                     {"path": "STATUS.json"}],
+          "shards": [{"kind": "county", "county_fips": "10001",
+                      "file": "NAD-US-DE-10001-kent.ndjson.gz", "rows": 5}],
+          "reference_check": {"counties_ok": 1, "counties_empty": 0, "counties_failed": 0,
+                              "counties_total": 1, "county_union_ids": 5, "overflow_ids": 0},
+          "volume": {"index": 1, "total": 2}}
+    v2 = {"generated_at": "2026-10-21T01:00:00Z",
+          "scope": {"state": "DE", "counties": [{"fips": "10003", "key": "new_castle"}]},
+          "assets": [{"path": "nad/NAD-US-DE-10003-new_castle.ndjson.gz"}],
+          "shards": [{"kind": "county", "county_fips": "10003",
+                      "file": "NAD-US-DE-10003-new_castle.ndjson.gz", "rows": 7},
+                     {"kind": "overflow", "file": "NAD-US-DE-OUTOFSTATE.ndjson.gz", "rows": 2}],
+          "reference_check": {"counties_ok": 1, "counties_empty": 0, "counties_failed": 0,
+                              "counties_total": 1, "county_union_ids": 7, "overflow_ids": 2},
+          "volume": {"index": 2, "total": 2}}
+    mg = mvm.merge_docs([("raw-US-DE-v1-p1", v1), ("raw-US-DE-v1-p2", v2)])
+    try:
+        mvm.merge_docs([("dup-a", v1), ("dup-b", v1)])
+        dup_err = False
+    except SystemExit:
+        dup_err = True
+    r8 = {
+        "县并集": len(mg["scope"]["counties"]) == 2,
+        "资产并集": len(mg["assets"]) == 2,
+        "县片并集": len(mg["shards"]) == 3,
+        "参考项逐项相加": (mg["reference_check"]["counties_ok"] == 2
+                          and mg["reference_check"]["overflow_ids"] == 2
+                          and mg["reference_check"]["county_union_ids"] == 12),
+        "卷数记录": mg["volume"]["volumes"] == 2,
+        "integrity 重算": bool(mg["integrity"]["sha256"]),
+        "切重会报错": dup_err,
+    }
+    results["T8"] = all(r8.values())
+    print(f"  T8: {r8}")
+    print("T8 判定：", "✅ 通过" if results["T8"]
+          else f"❌ 失败 {[k for k, v in r8.items() if not v]}")
 
     bad = [k for k, v in results.items() if not v]
     print("\n总判定：", "✅ 全部通过" if not bad else f"❌ 失败 {bad}")

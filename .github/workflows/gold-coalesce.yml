@@ -34,6 +34,10 @@ on:
         type: string
         required: false
         default: "4"
+      volumes:
+        type: string
+        required: false
+        default: ""
   workflow_dispatch:
     inputs:
       state:
@@ -51,6 +55,9 @@ on:
       workers:
         description: 按县并行进程数（0=自动 min(4,CPU)）
         default: "4"
+      volumes:
+        description: 分卷模式（auto=自动发现 raw-US-<ST>-v1-p* 并合并；留空=单卷旧行为）
+        default: ""
 
 permissions:
   contents: write
@@ -126,8 +133,17 @@ jobs:
           fi
           echo "ready=true" >> "$GITHUB_OUTPUT"
 
+      - name: 分卷合并（volumes=auto：多卷账本合成一份 + 资产并到一个目录）
+        if: ${{ inputs.volumes == 'auto' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RAW_REPO: ${{ github.repository_owner }}/World-US-Map-Data
+        run: |
+          python3 scripts/merge_volume_manifests.py --state "$ST" \
+            --raw-dir "data/raw/US-$ST" --repo "$RAW_REPO" --download
+
       - name: 拉取一仓 raw 全量资产（只读）
-        if: steps.preflight.outputs.ready == 'true'
+        if: ${{ steps.preflight.outputs.ready == 'true' && inputs.volumes != 'auto' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RAW_REPO: ${{ github.repository_owner }}/World-US-Map-Data
