@@ -643,6 +643,27 @@ def tiger_check(seg_index: dict, num: str, skey: str, lon: float, lat: float) ->
 
 
 # ---------------------------------------------------------------- 主流程：单县
+def upstream_gaps(scope: dict) -> dict:
+    """★ 2026-10-21 修 G7：把「上游缺几个县 / 哪几个县」原样带进产物。
+
+    用户口径：缺县的州照样加工，但产物里必须标明缺几个、缺哪几个 ——
+    不许静默把「缺县的州」当完整州流到下游。
+    """
+    g = scope.get("upstream_gaps") or {}
+    missing = g.get("missing_counties") or []
+    skipped = scope.get("skipped_counties") or []
+    return {
+        "phase": g.get("phase") or "unknown",
+        "complete_partial": bool(g.get("complete_partial")),
+        "missing_count": len(missing),
+        "missing_counties": missing,
+        "skipped_by_assets_count": len(skipped),
+        "skipped_by_assets": [s.get("fips") if isinstance(s, dict) else s for s in skipped],
+        "note": ("上游声明有县缺失：本段为权威缺口清单；coverage.nad_backed_counties 不含这些县。"
+                 "缺县不影响已产数据的可信度，但下游不得当完整州使用。"),
+    }
+
+
 def process_county(scope: dict, county: dict, raw_dir: Path, cache_dir: Path,
                    oa_buckets: dict, zcta_idx: SpatialIndex | None,
                    place_idx: SpatialIndex | None, county_rings: list,
@@ -1044,6 +1065,7 @@ def main(argv=None) -> int:
         "note": "coverage 相对上游（一仓 NAD）声明，不是地理真值",
     }
     manifest["zero_nad_counties"] = [{k: v for k, v in c.items() if k != "rings"} for c in zero]
+    manifest["upstream_gaps"] = upstream_gaps(scope)
     manifest["zcta_available"] = bool(zcta)
     (out_dir / "MANIFEST.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     (out_dir / "STATUS.json").write_text(json.dumps(

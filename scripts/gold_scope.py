@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -51,6 +52,32 @@ MULTI_TZ = {"IN", "KY", "TN", "FL", "MI", "ND", "SD", "NE", "KS", "TX", "ID", "O
 
 def log(msg: str) -> None:
     print(f"[scope] {msg}", flush=True)
+
+
+# ★ 2026-10-21 修 G2：县片的主键字段有**三种写法** ——
+#   MANIFEST 原生 county_fips；manifest_heal 按实物补出来的 fips；旧账本只有文件名。
+#   旧代码只认 county_fips，AK 一补账本就 KeyError('county_fips')，整州被阻。
+_RE_NAD = re.compile(r"^NAD-US-([A-Z]{2})-(\d{5})-(.+)\.ndjson\.gz$")
+
+
+def shard_fips(s: dict, name: str = "") -> str:
+    for k in ("county_fips", "fips", "countyFips"):
+        v = str(s.get(k) or "").strip()
+        if v:
+            return v
+    nm = name or str(s.get("file") or "").rsplit("/", 1)[-1]
+    m = _RE_NAD.match(nm)
+    return m.group(2) if m else ""
+
+
+def shard_key(s: dict, name: str = "") -> str:
+    for k in ("county_key", "county", "key"):
+        v = str(s.get(k) or "").strip()
+        if v:
+            return v
+    nm = name or str(s.get("file") or "").rsplit("/", 1)[-1]
+    m = _RE_NAD.match(nm)
+    return m.group(3) if m else ""
 
 
 def load_yaml(path: Path) -> dict:
@@ -127,11 +154,16 @@ def build_scope(state: str, raw_dir: Path, roster_path: Path, reg_path: Path,
     manifest = json.loads((raw_dir / "MANIFEST.json").read_text(encoding="utf-8"))
     assets = index_assets(manifest)
     # 一仓实证：NAD 县片不一定出现在 assets[]，但一定在 shards[].file —— 以 shards 为准
+    # ★ 2026-10-21 修 G2：字段名三种写法都认（county_fips / fips / 文件名）
     for s in manifest.get("shards") or []:
-        if s.get("kind") == "county" and s.get("file"):
-            nm = s["file"].rsplit("/", 1)[-1]
-            if nm.endswith(".ndjson.gz"):
-                assets["nad"].setdefault(s["county_fips"], nm)
+        if not isinstance(s, dict) or s.get("kind") != "county" or not s.get("file"):
+            continue
+        nm = str(s["file"]).rsplit("/", 1)[-1]
+        if not nm.endswith(".ndjson.gz"):
+            continue
+        fips = shard_fips(s, nm)
+        if fips:
+            assets["nad"].setdefault(fips, nm)
 
     if not assets.get("overture"):
         raise KeyError("MANIFEST 里没有 OVERTURE-US-<ST>.parquet")
@@ -171,14 +203,17 @@ def build_scope(state: str, raw_dir: Path, roster_path: Path, reg_path: Path,
                 "nad_from_overflow": True,
             })
         shards = []
-    for s in sorted(shards, key=lambda x: x["county_fips"]):
-        fips = s["county_fips"]
+    for s in sorted(shards, key=lambda x: str(shard_fips(x))):
+        fips = shard_fips(s)
+        if not fips:
+            log(f"⚠️ 县片缺 fips，已跳过：{s.get('file')}")
+            continue
         if only_counties and fips not in only_counties:
             continue
         counties.append({
             "fips": fips,
-            "key": s.get("county_key"),
-            "name": s.get("county_name"),
+            "key": shard_key(s),
+            "name": s.get("county_name") or s.get("name") or shard_key(s),
             "nad_rows": s.get("rows"),
             "nad_file": assets["nad"].get(fips),
             "addrfeat": assets["tiger_addrfeat"].get(fips),
@@ -187,6 +222,13 @@ def build_scope(state: str, raw_dir: Path, roster_path: Path, reg_path: Path,
 
     missing = [c["fips"] for c in counties
                if not (c["nad_file"] and c["addrfeat"] and c["county_geo"])]
+    # ★ 2026-10-21 修 G3：跳过的县不能只在日志里一闪而过 —— 写进 scope，后续可见可查。
+    skipped = [
+        {"fips": c["fips"], "key": c.get("key"), "name": c.get("name"),
+         "missing": [k for k, ok in (("nad", bool(c["nad_file"])),
+                                     ("addrfeat", bool(c["addrfeat"])),
+                                     ("county_geo", bool(c["county_geo"]))) if not ok]}
+        for c in counties if c["fips"] in missing]
     if missing:
         log(f"⚠️ 这些县的 NAD/TIGER 资产不齐，将跳过：{missing}")
         counties = [c for c in counties if c["fips"] not in missing]
@@ -207,8 +249,25 @@ def build_scope(state: str, raw_dir: Path, roster_path: Path, reg_path: Path,
             "name": c.get("name"),
             "reason": "no_upstream_coverage",
             "county_geo": assets["tiger_county"].get(fips),
-            "oa_rows": None,
         })
+    # ★ 2026-10-21 修 G7：一仓新状态（缺县强制放行）必须被看见 ——
+    #   方案：照样加工，但把「缺几个县 / 哪几个县」原样写进 scope → 最终进产物 MANIFEST。
+    phase = ""
+    try:
+        phase = str(json.loads((raw_dir / "STATUS.json").read_text(encoding="utf-8"))
+                    .get("phase") or "")
+    except Exception:  # noqa: BLE001
+        phase = ""
+    failed_up = (manifest.get("reference_check") or {}).get("failed_counties") or []
+    missing_up = []
+    for f in failed_up:
+        if isinstance(f, dict):
+            missing_up.append({"fips": str(f.get("county_fips") or ""),
+                               "key": f.get("county_key"), "name": f.get("county_name"),
+                               "reason": f.get("reason")})
+        else:
+            missing_up.append({"fips": str(f), "key": None, "name": None, "reason": None})
+
     scope = {
         "state": state,
         "state_name": r.get("name"),
@@ -234,6 +293,15 @@ def build_scope(state: str, raw_dir: Path, roster_path: Path, reg_path: Path,
         },
         "counties": counties,
         "zero_nad_counties": zero,
+        "skipped_counties": skipped,
+        "upstream_gaps": {
+            "phase": phase or "unknown",
+            "complete_partial": phase == "complete_partial",
+            "missing_count": len(missing_up),
+            "missing_counties": missing_up,
+            "note": ("上游声明有县缺失（一仓 failed_counties）：照样加工，"
+                     "但产物必须显式声明缺口，不许当完整州"),
+        },
         "coverage": {
             "total_counties": len(counties) + len(zero),
             "nad_backed_counties": len(counties),
@@ -273,7 +341,14 @@ def main(argv=None) -> int:
         f"{len(scope['zero_nad_counties'])} 县 0 上游覆盖 / "
         f"admin1={scope['admin']['admin1_code']} / tz={scope['timezone']} ({scope['timezone_precision']})")
     for c in scope["counties"]:
-        log(f"  县 {c['fips']} {c['name']:<28} NAD={c['nad_rows']:>7}  addrfeat={c['addrfeat']}")
+        # ★ 修 G1：溢出型州的 nad_rows 是 None，用 :>7 直接 TypeError（NH 曾在生产崩了）
+        nr = c.get("nad_rows")
+        nad_txt = f"{nr:>7}" if isinstance(nr, int) else "      —"
+        log(f"  县 {c['fips']} {str(c.get('name') or c.get('key') or '?'):<28} "
+            f"NAD={nad_txt}  addrfeat={c.get('addrfeat') or '—'}")
+    gaps = scope.get("upstream_gaps") or {}
+    if gaps.get("missing_count"):
+        log(f"⚠️ 上游缺 {gaps['missing_count']} 个县（phase={gaps.get('phase')}）→ 照加工，产物里声明")
     return 0
 
 

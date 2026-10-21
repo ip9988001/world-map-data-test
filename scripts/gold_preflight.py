@@ -32,8 +32,8 @@ def log(msg: str) -> None:
 
 
 def check(manifest_path: Path, expect_state: str | None,
-          assets_file: Path | None = None) -> tuple[str, list[str], list[str]]:
-    """返回 (status, errors, warns)
+          assets_file: Path | None = None) -> tuple[str, list[str], list[str], str]:
+    """返回 (status, errors, warns, phase)
 
     assets_file（可选）：`gh release view --json assets` 导出的实物清单（每行 `名字\t大小`）。
     为什么需要：一仓是「边抓边传 + 断点续传」的，MANIFEST 记账可能漏记实物
@@ -43,7 +43,7 @@ def check(manifest_path: Path, expect_state: str | None,
     errors: list[str] = []
     warns: list[str] = []
     if not manifest_path.exists():
-        return "missing", [f"MANIFEST 不存在：{manifest_path}"], warns
+        return "missing", [f"MANIFEST 不存在：{manifest_path}"], warns, ""
 
     actual: list[str] = []
     if assets_file and assets_file.exists():
@@ -55,7 +55,7 @@ def check(manifest_path: Path, expect_state: str | None,
     try:
         m = json.loads(manifest_path.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
-        return "missing", [f"MANIFEST 无法解析：{exc}"], warns
+        return "missing", [f"MANIFEST 无法解析：{exc}"], warns, ""
 
     # C1 账本存在（已过）
     if not m.get("generated_at"):
@@ -67,6 +67,19 @@ def check(manifest_path: Path, expect_state: str | None,
     st = scope.get("state")
     if expect_state and st and st != expect_state:
         errors.append(f"州码不符：MANIFEST={st} 期望={expect_state}")
+
+    # ★ 2026-10-21 修 G7：读一仓 STATUS.phase（collecting / complete / complete_partial）
+    phase = ""
+    try:
+        phase = str(json.loads((manifest_path.parent / "STATUS.json").read_text(encoding="utf-8"))
+                    .get("phase") or "")
+    except Exception:  # noqa: BLE001
+        phase = ""
+    if phase in ("collecting", ""):
+        warns.append(f"STATUS.phase={phase or '缺失'}（无 STATUS 时为历史州，按 C1~C5 判定）")
+    elif phase == "complete_partial":
+        warns.append("上游 STATUS.phase=complete_partial（一仓显式放行缺县）"
+                     "→ 照加工，但产物必须声明缺口，不许当完整州")
 
     rc = m.get("reference_check") or {}
     total = rc.get("counties_total")
@@ -87,7 +100,9 @@ def check(manifest_path: Path, expect_state: str | None,
     # C4
     tnc = rc.get("three_number_check") or {}
     if tnc and tnc.get("matches") is False:
-        errors.append("C4 失败：州级三数咬合不匹配（仅参考口径，但出现在封印态通常意味着中断）")
+        # ★ 2026-10-21 修 G4：一仓县级口径下州级三数常态为 False（州 bbox 必含邻州边角），
+        #   拿它当硬失败 → 合法封印的州全被判 partial（大州必踩）。降为提示。
+        warns.append(f"C4 提示：州级三数不咬合（gap={tnc.get('gap_ids')}）—— 一仓口径下仅参考，不阻断")
     elif not tnc:
         warns.append("three_number_check 缺失")
 
@@ -128,7 +143,7 @@ def check(manifest_path: Path, expect_state: str | None,
     status = "sealed" if not errors else "partial"
     log(f"州={st} 县={len(shards)} 县片行数={shard_rows:,} NAD local={nad_local} "
         f"资产={len(src)} → {status.upper()}")
-    return status, errors, warns
+    return status, errors, warns, phase
 
 
 def main(argv=None) -> int:
@@ -143,7 +158,7 @@ def main(argv=None) -> int:
     mpath = Path(args.manifest) if args.manifest else Path(args.raw_dir or ".") / "MANIFEST.json"
     apath = Path(args.assets) if args.assets else (
         Path(args.raw_dir) / "assets.txt" if args.raw_dir else None)
-    status, errors, warns = check(mpath, args.state, apath)
+    status, errors, warns, phase = check(mpath, args.state, apath)
     for w in warns:
         log(f"⚠️ {w}")
     for e in errors:
@@ -151,8 +166,8 @@ def main(argv=None) -> int:
 
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(
-            {"status": status, "errors": errors, "warnings": warns}, ensure_ascii=False, indent=1),
-            encoding="utf-8")
+            {"status": status, "phase": phase, "errors": errors, "warnings": warns},
+            ensure_ascii=False, indent=1), encoding="utf-8")
 
     if status != "sealed":
         log("🚫 未达终态封印，拒绝开跑（等一仓收尾后重试）")

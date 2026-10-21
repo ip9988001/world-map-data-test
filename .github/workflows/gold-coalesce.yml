@@ -89,7 +89,8 @@ jobs:
             -p MANIFEST.json --clobber || echo "⚠️ 该 Release 尚无 MANIFEST.json（采集未收尾）"
           ls -la "data/raw/US-$ST/MANIFEST.json" 2>/dev/null || true
 
-      - name: 前置核验（一仓终态封印，未封印直接拒绝开跑）
+      - name: 前置核验（一仓终态封印，未封印→跳过不报红）
+        id: preflight
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RAW_REPO: ${{ github.repository_owner }}/World-US-Map-Data
@@ -109,8 +110,24 @@ jobs:
           python3 scripts/gold_preflight.py --state "$ST" \
             --raw-dir "data/raw/US-$ST" --assets "data/raw/US-$ST/assets.txt" \
             --json-out "data/gold/US-$ST/preflight.json"
+          rc=$?
+          # ★ 2026-10-21 修 G8：exit 2 = 上游未就绪（一仓还在采/未封印）——
+          #   这是「等一等」，不是故障。置 ready=false 跳过后续，不报红、不上哨兵报警。
+          if [ "$rc" -eq 2 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "### ⏭ 上游未就绪（exit 2）" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "一仓 \`$RAW_TAG\` 尚未终态封印，本轮跳过；等一仓收尾后重跑即可（断点续传，不会白干）。" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::上游 $RAW_TAG 未就绪，跳过加工（不算失败）"
+            exit 0
+          elif [ "$rc" -ne 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit "$rc"
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: 拉取一仓 raw 全量资产（只读）
+        if: steps.preflight.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RAW_REPO: ${{ github.repository_owner }}/World-US-Map-Data
@@ -120,12 +137,14 @@ jobs:
           ls "data/raw/US-$ST" | wc -l
 
       - name: 缓存层（ZCTA 面等跨 run 复用，避免每次重拉 TIGERweb）
+        if: steps.preflight.outputs.ready == 'true'
         uses: actions/cache@v4
         with:
           path: data/cache
           key: gold-cache-${{ inputs.state }}-v1
 
       - name: 生成 scope（MANIFEST + roster + registry → 任务上下文）
+        if: steps.preflight.outputs.ready == 'true'
         run: |
           python3 scripts/gold_scope.py \
             --state "$ST" \
@@ -133,6 +152,7 @@ jobs:
             --out "data/gold/US-$ST/scope.json" ${COUNTIES:+--counties "$COUNTIES"}
 
       - name: 自取 ZCTA5（按 NAD 实测邮编区间，二仓自闭环）
+        if: steps.preflight.outputs.ready == 'true'
         id: zcta
         run: |
           RANGE=$(python3 - <<'PY'
@@ -164,6 +184,7 @@ jobs:
           fi
 
       - name: 加工（四栏漏斗 + 分源守恒）
+        if: steps.preflight.outputs.ready == 'true'
         run: |
           python3 scripts/gold_coalesce.py \
             --scope "data/gold/US-$ST/scope.json" \
@@ -174,7 +195,7 @@ jobs:
             ${COUNTIES:+--counties "$COUNTIES"}
 
       - name: 发布门禁（守恒 + ISO 门禁）
-        if: always()
+        if: ${{ always() && steps.preflight.outputs.ready == 'true' }}
         run: |
           python3 - <<'PY'
           import json, sys
@@ -198,7 +219,7 @@ jobs:
           PY
 
       - name: 发 Release（gold-US-<ST>-v1）
-        if: ${{ success() && github.event.inputs.publish != 'false' }}
+        if: ${{ success() && steps.preflight.outputs.ready == 'true' && github.event.inputs.publish != 'false' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -275,7 +296,14 @@ jobs:
           SENTINEL_TOKEN: ${{ secrets.SENTINEL_TOKEN }}
         run: |
           ST="${{ inputs.state }}"
-          if [ "${{ job.status }}" = "success" ]; then EVT=gold_sealed; else EVT=alarm; fi
+          # ★ 2026-10-21 修 G8：三种结局分开报 —— 没产物=黄（上游未就绪），不算故障
+          if [ ! -f "data/gold/US-$ST/MANIFEST.json" ]; then
+            EVT=upstream_not_ready
+          elif [ "${{ job.status }}" = "success" ]; then
+            EVT=gold_sealed
+          else
+            EVT=alarm
+          fi
           if [ -z "$SENTINEL_URL" ]; then echo "无哨兵地址，跳过"; exit 0; fi
           curl -s -m 10 -X POST "$SENTINEL_URL" \
             -H "X-Sentinel-Token: $SENTINEL_TOKEN" \
