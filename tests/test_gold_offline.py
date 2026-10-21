@@ -185,6 +185,27 @@ def main() -> int:
     results["T6"] = all(r6.values())
     print("T6 产物缺口声明：", r6)
 
+    # ---- T7 Overture 两种形态（州级单文件 / 按县分片）----
+    d7 = mk_raw(base / "t7", shards=[{"kind": "county", "county_fips": f, "county_key": k,
+                                     "rows": 5} for f, k in DE])
+    m7 = json.loads((d7 / "MANIFEST.json").read_text(encoding="utf-8"))
+    m7["assets"] = [a for a in m7["assets"] if "overture" not in a["path"]]
+    for f, k in DE:
+        m7["assets"].append({"path": f"overture/OVERTURE-US-DE-{f}-{k}.parquet", "bytes": 1024})
+    (d7 / "MANIFEST.json").write_text(json.dumps(m7), encoding="utf-8")
+    sc7 = scope_of(d7)
+    files7 = sc7["assets"].get("overture_files") or []
+    r7 = {
+        "收集全部县片": len(files7) == 3,
+        "模式=per_county": sc7["assets"].get("overture_mode") == "per_county",
+        "不再只留最后一个": len(set(files7)) == 3,
+        "compat 字段仍有值": bool(sc7["assets"].get("overture")),
+    }
+    results["T7"] = all(r7.values())
+    print(f"  T7: {r7}")
+    print("T7 判定：", "✅ 通过" if results["T7"]
+          else f"❌ 失败 {[k for k, v in r7.items() if not v]}")
+
     bad = [k for k, v in results.items() if not v]
     print("\n总判定：", "✅ 全部通过" if not bad else f"❌ 失败 {bad}")
     return 0 if not bad else 1

@@ -114,7 +114,8 @@ def admin_constants(registry: dict, state: str) -> dict:
 def index_assets(manifest: dict) -> dict:
     """把 MANIFEST.assets 按角色归类（只用 basename 前缀，不猜子目录）。"""
     a = {"nad": {}, "tiger_addrfeat": {}, "tiger_county": {}, "oa": {},
-         "overture": None, "state_geo": None, "places": None, "zcta": None}
+         "overture": None, "overture_files": [], "state_geo": None,
+         "places": None, "zcta": None}
     for item in manifest.get("assets") or []:
         name = item["path"].rsplit("/", 1)[-1]
         if name.startswith("NAD-") and name.endswith(".ndjson.gz"):
@@ -139,8 +140,15 @@ def index_assets(manifest: dict) -> dict:
             src = name[:-len(".zip")].split(f"OA-")[-1]           # US-SD-statewide
             parts = src.split("-")
             a["oa"]["-".join(parts[2:])] = name
-        elif name.startswith("OVERTURE-") and name.endswith(".parquet"):
-            a["overture"] = name
+        elif name.startswith("OVERTURE-") and name.endswith((".parquet", ".geojson")):
+            # ★ 2026-10-21 修 G5：一仓两种形态都要吃 ——
+            #   州级单文件 OVERTURE-US-<ST>.parquet、按县分片 OVERTURE-US-<ST>-<fips>-<key>.parquet。
+            #   旧实现是覆盖式赋值，按县形态下只剩最后一个县 → 其余县全部拿不到 Overture。
+            a["overture_files"].append(name)
+            if not re.search(r"-[A-Z]{2}-\d{5}-", name):
+                a["overture"] = name          # 州级单文件，优先
+            elif a["overture"] is None:
+                a["overture"] = name          # 只有县片时先占位，仅用于“有没有”判空
     return a
 
 
@@ -285,6 +293,11 @@ def build_scope(state: str, raw_dir: Path, roster_path: Path, reg_path: Path,
         "raw_dir": str(raw_dir),
         "assets": {
             "overture": assets["overture"],
+            "overture_files": sorted(assets.get("overture_files") or []),
+            "overture_mode": ("per_county"
+                              if any(re.search(r"-[A-Z]{2}-\d{5}-", n)
+                                     for n in (assets.get("overture_files") or []))
+                              else "state_file"),
             "oa": assets["oa"],
             "state_geo": assets["state_geo"],
             "places": assets["places"],

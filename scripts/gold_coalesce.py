@@ -473,7 +473,7 @@ def bbox_split_antimeridian(bbox: tuple) -> list[tuple]:
 
 
 # ---------------------------------------------------------------- 读取：Overture（全州一次切片，分县分桶）
-def bucket_overture(parquet: Path, county_index: SpatialIndex, cache_dir: Path,
+def bucket_overture(parquet, county_index: SpatialIndex, cache_dir: Path,
                     write_fips: set, state_bbox: tuple) -> tuple[dict, int]:
     """全州只扫一次 parquet（O(1) 次扫描），按县多边形分桶落 ndjson.gz。
 
@@ -483,23 +483,35 @@ def bucket_overture(parquet: Path, county_index: SpatialIndex, cache_dir: Path,
     import duckdb
     pkg_dir = cache_dir / "overture"
     pkg_dir.mkdir(parents=True, exist_ok=True)
+    # ★ 2026-10-21 修 G5：支持「州级单文件」与「按县多文件」两种输入（一仓两种都会出）。
+    paths = [Path(x) for x in (parquet if isinstance(parquet, (list, tuple)) else [parquet])]
+    paths = [x for x in paths if x.exists()]
+    if not paths:
+        raise FileNotFoundError(f"Overture parquet 不存在：{parquet}")
+    sig = ",".join(x.name for x in paths)
     targets = {f: pkg_dir / f"ovt-US-{f}.ndjson.gz" for f in write_fips}
     stats_path = pkg_dir / "_stats.json"
     if all(p.exists() for p in targets.values()):
         st = json.loads(stats_path.read_text()) if stats_path.exists() else {}
-        log(f"Overture 分桶缓存命中（{len(targets)} 县，州外 {st.get('outside', 0):,} 行）")
-        return {f: sum(1 for _ in gzip.open(p, "rt")) for f, p in targets.items()}, st.get("outside", 0)
+        if st.get("sig") == sig:                       # 文件集合没变才算缓存命中
+            log(f"Overture 分桶缓存命中（{len(targets)} 县 / {len(paths)} 个文件，"
+                f"州外 {st.get('outside', 0):,} 行）")
+            return ({f: sum(1 for _ in gzip.open(p, "rt")) for f, p in targets.items()},
+                    st.get("outside", 0))
+        log("Overture 输入文件集合已变 → 缓存作废，重新分桶")
 
     # bbox 跨 180° 经线（AK）必须拆两段，否则等价于「全球查询」——实测 AK 会直接爆内存
     boxes = bbox_split_antimeridian(state_bbox)
     conds = " OR ".join(
         f"(bbox.xmin >= {w} AND bbox.xmax <= {e} AND bbox.ymin >= {s} AND bbox.ymax <= {n})"
         for (w, s, e, n) in boxes)
+    # 按县分片是「按县 bbox 切」的产物，相邻县必然重叠 → 用 DISTINCT ON (id) 去重
+    src = "[" + ", ".join(f"'{x.as_posix()}'" for x in paths) + "]"
     sql = f"""
-        SELECT id, number, street, unit, postcode, postal_city, address_levels,
+        SELECT DISTINCT ON (id) id, number, street, unit, postcode, postal_city, address_levels,
                sources[1].dataset AS src_ds,
                cast(geometry AS VARCHAR) AS geom
-        FROM read_parquet('{parquet.as_posix()}')
+        FROM read_parquet({src})
         WHERE {conds}
     """
     if len(boxes) > 1:
@@ -540,7 +552,8 @@ def bucket_overture(parquet: Path, county_index: SpatialIndex, cache_dir: Path,
     for h in handles.values():
         h.close()
     con.close()
-    stats_path.write_text(json.dumps({"total": total, "outside": outside}), encoding="utf-8")
+    stats_path.write_text(json.dumps({"total": total, "outside": outside, "sig": sig,
+                                     "files": len(paths)}), encoding="utf-8")
     log(f"Overture 单次扫描 {total:,} 行 → 分桶 {len(handles)} 县，"
         f"县内 {sum(v for k, v in counts.items() if k in write_fips):,} 行，州外/海上 {outside:,} 行")
     return dict(counts), outside
@@ -1007,8 +1020,13 @@ def main(argv=None) -> int:
 
     # Overture：全州一次扫描 + 分县分桶（关键性能改造）
     sb = scope.get("bbox") or rings_bbox([p for c in county_shapes for p in [x for r in c["rings"] for x in r]])
-    ovt_counts, ovt_outside = bucket_overture(raw_dir / scope["assets"]["overture"],
-                                              county_index, cache, write_fips, tuple(sb))
+    _ovt_names = scope["assets"].get("overture_files") or (
+        [scope["assets"]["overture"]] if scope["assets"].get("overture") else [])
+    _ovt_paths = [raw_dir / n for n in _ovt_names]
+    log(f"Overture 输入：{len(_ovt_paths)} 个文件（模式 "
+        f"{scope['assets'].get('overture_mode', 'state_file')}）")
+    ovt_counts, ovt_outside = bucket_overture(_ovt_paths, county_index, cache,
+                                              write_fips, tuple(sb))
     log(f"Overture 分桶就绪：{round(time.time()-t_start,1)}s")
 
     zcta = load_zcta(cache / f"zcta-US-{scope['state']}.ndjson.gz")
