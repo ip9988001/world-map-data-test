@@ -110,8 +110,9 @@ def check(base: dict, head: dict, want_rev: int) -> dict:
         notes.append("rev_log %d 条：%s；rev%d 记 rejected=方案A ✓"
                      % (len(log), revs, want_rev))
 
-    # ⑤ 顶层键白名单（只允许 rev/rev_log/geom 变化 + 字段数组追加）
-    allow = {"rev", "rev_log", "geom", "provenance_fields"}
+    # ⑤ 顶层键白名单（只允许 rev/rev_log/geom 变化 + 字段数组追加 + 现状声明）
+    #   current_state：必填的「现状护栏」（字段已定义但恒为 null 时必须写明），属纯追加元数据
+    allow = {"rev", "rev_log", "geom", "provenance_fields", "current_state"}
     for k in sorted(set(base) | set(head)):
         if k in allow:
             continue

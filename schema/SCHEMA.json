@@ -38,6 +38,17 @@
     "read_cost": "按需 join：渲染地址页、判县、邻接/去重才需要；纯属性任务不碰它（gold 行不因几何变大）",
     "county_scope_cost": "页面作用域是单县，几何可能散在多个源层 → 按县做几何边车（一遍 map-reduce）后，页面渲染即无 join"
   },
+  "current_state": {
+    "at": "2026-10-30",
+    "rings_ref": "恒为 null —— 本文件定义了该字段，但目前没有任何一条 gold 行带值（连 key 都还没写进产物）",
+    "geom_bbox": "恒为 null（同上）",
+    "why_not_filled": "三仓几何尚未落盘；且二仓 gold 的 writer（scripts/gold_coalesce.py 的 process_county，row 字典 :854-886）目前只写 32 个主字段 + 19 个 provenance —— rev2 的 4 个与 rev3 的 2 个字段一个都没实现（全仓 *.py 对 src_kind / rings_ref / geom_bbox 均 0 引用）",
+    "when_will_be_filled": "三仓几何边车（geom-step10-<layer> / geom-step10b-<layer>）真正落盘，且二仓融合层加上按县几何 join 之后；在那之前任何一轮 gold 都不会有值",
+    "who_fills": "几何本体由三仓产出并落 Release（二仓不采几何）；二仓在融合时按 (src_layer_id, src_oid) 查边车，把指针写进 rings_ref、把 bbox 写进 geom_bbox",
+    "downstream_must_not_assume": "在 MANIFEST 显式声明 rings_ref_filled=true 之前，下游一律不得假定 rings_ref / geom_bbox 非空：必须按 .get() 读取并准备 null 分支（渲染、判县、邻接都要有「无几何」路径）",
+    "no_geom_backfill_entry": "顶层 geom.deref.where 提到的存量层 `geom-backfill-<layer>` 目前没有对应代码入口：`--geom-backfill` 在代码里并不存在，只有设计文档；现有唯一可执行路径是三仓 `stage=10b` 灰度",
+    "evidence": "docs/GOLD-LAYERING-2026-10-30.md（第五节 writer 现状 / 15 州影响）"
+  },
   "naming": {
     "release_tag": "gold-US-<ST>-v1",
     "asset_shard": "ADDR-US-<ST>-<FIPS5>-<county_key>.ndjson.gz",
