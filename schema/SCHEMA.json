@@ -2,16 +2,42 @@
   "schema_version": "2.0",
   "status": "LOCKED",
   "frozen_at": "2026-10-18T11:00:00Z",
-  "rev": 2,
+  "rev": 3,
   "rev_log": [
     {"rev": 1, "at": "2026-10-18T11:00:00Z", "by": "二仓 gold-v2", "kind": "initial",
      "change": "v2.0 首次冻结：32 主字段 + 19 provenance 字段"},
     {"rev": 2, "at": "2026-10-30T10:00:00Z", "by": "三仓 intake-33 接入", "kind": "minor-additive",
      "change": "新增 4 个三仓溯源字段（additive）；32 个主字段与既有 19 个 provenance 字段的名/类型/语义均未改动",
      "fields_added": ["src_kind", "src_layer_id", "src_layer_url", "src_parcel_id"],
-     "why": "三仓源层是 ArcGIS 点层/宗地层/线层，没有 NAD UUID / OA HASH / TIGER TLID / Overture id，既有 19 个溯源列一个都填不上；不加这 4 列地址无法回溯到原始层与原始宗地"}
+     "why": "三仓源层是 ArcGIS 点层/宗地层/线层，没有 NAD UUID / OA HASH / TIGER TLID / Overture id，既有 19 个溯源列一个都填不上；不加这 4 列地址无法回溯到原始层与原始宗地"},
+    {"rev": 3, "at": "2026-10-30T14:00:00Z", "by": "三仓 geometry 第②档", "kind": "minor-additive",
+     "change": "新增几何表达 rings_ref（方案 B：引用式，不内联几何）+ geom_bbox；一行仍 = 一条地址，grain 不变",
+     "fields_added": ["rings_ref", "geom_bbox"],
+     "why": "三仓 2026-10-30 拍定第②档（6 位小数 + RDP 1e-5°）开始落简化 rings，但几何属于宗地/oid，不属于地址行：内联 WKT（方案 A）会把同一宗地的几何按地址数复制 N 份，且让 gold 行的「一个地址一条记录」语义里混进「一条几何」—— 方案 B 只加一个指针列，几何本体留三仓，按需 join",
+     "rejected": "方案 A（geom_wkt 行内存）：零 join 但每行多 ~28 B/顶点（比 JSON 数组更胖）+ 同一宗地按地址数重复；按 1 亿行估 +10 GB 以上，且改一行几何要改 N 行"}
   ],
   "grain": "一行 = 一条标准化后的美国门牌地址记录；作用域 = 单个县（county_fips）",
+  "geom": {
+    "kind": "rings_ref",
+    "decision": "方案 B（引用式）。几何的归属是 (src_layer_id, src_oid)，不是地址行；引用不复制、不改 grain、与三仓几何边车解耦",
+    "rings_ref_format": "geom://<src_layer_id>/<src_oid>（例：geom://9ggvf3XvKr_arcgis_rest_services_Parcel_Query_FeatureServer_1/123456）",
+    "deref": {
+      "where": "三仓 Release tag `geom-step10-<layer>` / `geom-step10b-<layer>`（存量层补采为 `geom-backfill-<layer>`）",
+      "asset": "geom-<layer>-<unit>.ndjson.gz，每行 {oid, rings, _lat, _lon, src_layer}",
+      "note": "同一 tag 下的 GEOM-MANIFEST.json 给 unit 清单与 oid 区间；按 oid 二分，不需要全量下载"
+    },
+    "rings_spec": {
+      "crs": "EPSG:4326（WGS84），与 primary_fields.latitude/longitude 同口径",
+      "decimals": 6,
+      "tolerance_m": 0.11,
+      "simplify": "Douglas-Peucker，eps = 1e-5°（≈1.1 m）",
+      "closed": true,
+      "max_verts_per_row": 8000,
+      "degnerate": "几何退化/缺失 → rings_ref = null（不猜、不拿 bbox 代替）"
+    },
+    "read_cost": "按需 join：渲染地址页、判县、邻接/去重才需要；纯属性任务不碰它（gold 行不因几何变大）",
+    "county_scope_cost": "页面作用域是单县，几何可能散在多个源层 → 按县做几何边车（一遍 map-reduce）后，页面渲染即无 join"
+  },
   "naming": {
     "release_tag": "gold-US-<ST>-v1",
     "asset_shard": "ADDR-US-<ST>-<FIPS5>-<county_key>.ndjson.gz",
@@ -77,7 +103,9 @@
     {"name": "src_kind",            "type": "enum",         "note": "三仓专有：address_point | parcel_situs | street_line；street_line 无门牌号，只进 aux_street"},
     {"name": "src_layer_id",        "type": "string",       "note": "三仓专有：源层标识，等于 Release tag collect-step<NN>-<layer_id> 里的 <layer_id>"},
     {"name": "src_layer_url",       "type": "string",       "note": "三仓专有：源层 ArcGIS REST 端点（仅记录，不用于回抓）"},
-    {"name": "src_parcel_id",       "type": "string",       "note": "三仓专有：仅 parcel_situs 行有值（ParcelID/APN/PIN/PARCEL_NUMBER）；点层与线层恒为 null"}
+    {"name": "src_parcel_id",       "type": "string",       "note": "三仓专有：仅 parcel_situs 行有值（ParcelID/APN/PIN/PARCEL_NUMBER）；点层与线层恒为 null"},
+    {"name": "rings_ref",           "type": "string",       "note": "rev3 新增：几何指针 geom://<src_layer_id>/<src_oid>；点层/无几何层/退化几何 = null。口径见顶层 `geom`"},
+    {"name": "geom_bbox",           "type": "array<float>|null", "note": "rev3 新增：[minLon, minLat, maxLon, maxLat]（6 位小数），给空间过滤用，省一次 deref；无几何 = null"}
   ],
   "enums": {
     "addr_type": ["Residential", "Residential (Multi-Unit)", "Commercial", "Unknown"],
