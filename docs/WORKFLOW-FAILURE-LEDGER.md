@@ -3,6 +3,15 @@
 > 立规：2026-10-31。用户原话：**每个仓建一份 workflow 故障清单，写之前必查、跑后必补。**
 > 本文是该仓 workflow 的**唯一故障台账**（唯一真值）。别处写的「踩坑记录」一律以本文为准并回链到编号。
 >
+> **本表条目以代码 / 文档可复核证据为准，记忆与传闻不入表**（复核不了的标「待复核」，不进结论）。
+>
+> ### TODO（二仓重启前必做，重启 checklist 第 1 项）
+> 1. **接 F16 门禁**：把 `collect/preflight_dispatch.py`（三仓 `docs/failure-ledger` 分支）的 **F16 故障清单判据**接到本仓 `gold_preflight.py`
+>    （台账路径 = 本仓 `docs/WORKFLOW-FAILURE-LEDGER.md`；建议直接 import 或复制 `parse_failure_ledger` / `judge_failure_ledger`，不要另写一份）。
+>    判据：复发≥2 且未规避 → FAIL；复发≥2 且已规避 → WARN；台账缺失 / 表解析失败 → FAIL；`--ledger-waive 编号=理由` 空理由拒绝执行。
+> 2. **先读三份清单**：本仓本文 + 一仓 `World-US-Map-Data/docs/WORKFLOW-FAILURE-LEDGER.md` + 三仓 `world-map-data-33/docs/WORKFLOW-FAILURE-LEDGER.md`（二仓吃的就是两头的产物）。
+> 3. 为什么现在不接：二仓自 2026-10-2x 起停摆（等第五源），接了没有触发场景，只会变成没人跑的代码。**重启前必须补。**
+>
 > 三条铁律：
 > 1. **写之前必查**：派单前先查本文 + 本次涉及的类别，派单里写 `故障清单已查：<编号列表 | 无>`，没有这行视为无效派单。
 > 2. **跑后必补**：新踩的坑**当天**补进本文（含错误原文关键行、证据路径、修法、验证方式、关联提交），**不许事后凭记忆补**。
