@@ -29,6 +29,15 @@
 - **自检**：**没有 ci-smoke、没有 check_docs**（这是事实，见 W2-015）。验收只能：`python3 -m unittest discover -s tests`、`python3 -m compileall scripts bots`、`python3 -c "import yaml;yaml.safe_load(...)"` 逐 workflow 解析。
 - **发布铁律**：分源独立记账（NAD/OA/OVT 三本账各自守恒），任一不守恒 → `exit 1` 不发版；`STATUS.phase` 有 `collecting / complete / complete_partial` 三种语义。
 
+### 1.1 口径作废声明（2026-11-01，因 W2-019）
+
+**本仓已发布的 15 个 `gold-US-<ST>-v1` 是用有缺陷的 `street_key()` 去重出来的**，其中
+`AL AR CO CT DC DE IA ME MT ND NH RI SD VT WY`（NH 的 12 个县资产是 57 B 空档，等于没出数）。
+
+- **这 15 州的 gold 去重结果、`dup_group`/`dup_members` 字段、以及任何「独立地址数」结论，一律不可对外引用**，也不可与三仓 08 的台账做数字对比（口径不同源）。
+- 可继续引用的只有：`nad_input` / `oa_input` / `ovt_input` / `out_of_bounds` / `malformed` 这类**不依赖 street_key 的计数**。
+- 重出条件：先按 W2-019 把 `street_key()` 换成 v3（三仓 `collect/lib/addrkey.py`），再整州重跑；未重跑前不得把 gold 当「已按新口径」。
+
 ## 1. 台账
 
 | 编号 | 发现日期 | 类别 | 症状（错误原文关键行） | 根因 | 影响（数据/账本/时间/假红） | 修法 | 验证方式 | 关联提交 | 复发次数 |
@@ -52,6 +61,7 @@
 | W2-017 | 2026-10-2x | 采集器逻辑 | Overture 只有县片、没有州级单文件时，`a["overture"]` 被**占位成某个县片**；若下游把它当「州级单文件」读，就只处理一个县 | 一个字段承担两种语义（「有没有」与「用哪个」） | 数据：静默只处理一个县 | 下游一律用 `overture_files[]` 遍历；`overture` 只用于判空 | 只有县片形态下，OVT 处理文件数 = `overture_files` 长度 | 见 `scripts/gold_scope.py:150-152` 注释 | 0 |
 | W2-018 | 2026-10-2x | 并发队列 | 单 Job 顺序跑多县、共享缓存：**一个县崩整州重跑**（没有县级续跑） | 并发单位是州，不是县 | 时间：一县崩 = 全州重跑；数据：无 | 按县分 job（缓存仍共享）或县级断点（已出 `scope.json` 的县跳过） | 故意让中间县失败：重跑只补该县及之后（耗时与日志可证） | 见 `gold-coalesce.yml` 头部铁律 2（现状：单 Job 顺序） | 0 |
 
+| W2-019 | 2026-11-01 | 账本与口径 | **`street_key()` 三处硬错，已出的 15 州 gold 去重口径不可引用**：<br>① **Unicode 被砍**：`PUNCT=[^A-Z0-9 ]` 直接删非 ASCII，`CAÑON` → `CA ON`（一条街被拆成两条）；<br>② **type 被名字里的后缀词劫持**：`street_key(name, type)` 在 type 是独立字段时先扫名字，`BRIDLE CREEK` + `BLVD` → `CREEK|BRIDLE`（实测），`Hoosier Creek Rd` → `CREEK|HOOSIER`；<br>③ **方向词整体丢弃**：`DIRECTION` 里的词被 `toks = [t for t in toks if t not in DIRECTION]` 删掉，`E MAIN ST` 与 `W MAIN ST` 同键 | 清洗规则按「自由串」写：先删标点、再把方向词当噪声、再用「任意位置的后缀词」定类型；没有区分「独立 type 字段」与「名字里的类型词」，也没有做 Unicode 折叠与序数归一 | **数据**：同名街东西段被合并成假地址、`CREEK/BLVD` 类街名被改类型 ⇒ 去重结果与「独立地址数」系统性偏差。三仓 IA 实测（143,903 行结构化行）：**类型或核心词实质不同 7.0%**（type 4.7% + core 2.3%）、序数写法不同 31.7%、**带方向词的行 62.5%**（这些行在旧口径下都会与反方向同名街合并） | 把三仓 `collect/lib/addrkey.py` 的 v3 规则移植到本仓 `street_key()`：NFKD 折叠 + 序数归一 + 独立 type 字段优先 + DIR 进键（缺失时允许合并但要打 `dir_conflict`）；**三仓为准，二仓跟改** | `collect/tests/test_addrkey.py` 16 条（含 20 条对照里的 9 条）+ 三仓 R1 IA 端到端 | 三仓 `collect/lib/addrkey.py`、`docs/08-DEDUP-PLAN-DRAFT.md` 2.2、`docs/08-R1-REPORT.md` 三 | 1 |
 ## 2. 用法（照抄即可）
 
 ```bash
@@ -76,4 +86,5 @@ git commit -m "ledger: +1 缓存与签名"
 - `scripts/list_failed_gold.py`（G12 失败州单跑入口）
 - `docs/GOLD-LAYERING-2026-10-30.md`（3 元组口径、单层融合无 staging、第五源对齐要求）
 - `tests/test_gold_offline.py`（G9 离线自测）
+- **W2-019 证据**：三仓 `collect/lib/addrkey.py`（v3 规则）、`docs/08-DEDUP-PLAN-DRAFT.md` 2.2（20 条前后对照）、`docs/08-R1-REPORT.md` 第三节（IA 实测占比）、`collect/tests/test_addrkey.py`
 - `.github/workflows/gold-coalesce.yml`（G6 分卷 `auto`、G8 `rc=2` 放行、缓存键 `gold-cache-<ST>-v1`、单 Job 顺序铁律）
