@@ -21,6 +21,11 @@ on:
       max_parallel:
         description: 同时跑几个州
         default: "3"
+      bypass_f16:
+        description: F16 阻塞豁免（true 时透传给每州的 gold-coalesce；默认 false）
+        type: choice
+        options: ["false", "true"]
+        default: "false"
 
 permissions:
   contents: write
@@ -56,3 +61,4 @@ jobs:
       counties: ""
       publish: ${{ inputs.publish }}
       workers: ${{ inputs.workers }}
+      bypass_f16: ${{ inputs.bypass_f16 }}

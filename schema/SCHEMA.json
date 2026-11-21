@@ -2,7 +2,7 @@
   "schema_version": "2.0",
   "status": "LOCKED",
   "frozen_at": "2026-10-18T11:00:00Z",
-  "rev": 3,
+  "rev": 4,
   "rev_log": [
     {"rev": 1, "at": "2026-10-18T11:00:00Z", "by": "二仓 gold-v2", "kind": "initial",
      "change": "v2.0 首次冻结：32 主字段 + 19 provenance 字段"},
@@ -14,7 +14,12 @@
      "change": "新增几何表达 rings_ref（方案 B：引用式，不内联几何）+ geom_bbox；一行仍 = 一条地址，grain 不变",
      "fields_added": ["rings_ref", "geom_bbox"],
      "why": "三仓 2026-10-30 拍定第②档（6 位小数 + RDP 1e-5°）开始落简化 rings，但几何属于宗地/oid，不属于地址行：内联 WKT（方案 A）会把同一宗地的几何按地址数复制 N 份，且让 gold 行的「一个地址一条记录」语义里混进「一条几何」—— 方案 B 只加一个指针列，几何本体留三仓，按需 join",
-     "rejected": "方案 A（geom_wkt 行内存）：零 join 但每行多 ~28 B/顶点（比 JSON 数组更胖）+ 同一宗地按地址数重复；按 1 亿行估 +10 GB 以上，且改一行几何要改 N 行"}
+     "rejected": "方案 A（geom_wkt 行内存）：零 join 但每行多 ~28 B/顶点（比 JSON 数组更胖）+ 同一宗地按地址数重复；按 1 亿行估 +10 GB 以上，且改一行几何要改 N 行"},
+    {"rev": 4, "at": "2026-11-22T00:00:00Z", "by": "Phase1a rev4", "kind": "minor-additive",
+     "change": "新增两个正交分级列 completeness_tier（S/A/B/C，完整性轴）+ confidence_level（L1/L2/L3，源票轴），严禁合成一列；新增元数据列 backfilled_fields（回填了哪些字段）与 missing_reason（缺什么为什么缺）；enums 四个枚举只追加不改名不删值；grade_rules 显式声明被 tiers 取代并给出单向映射；32 主字段、grain、primary_fields 顺序与既有 25 个 provenance 字段名/类型/注释全部未动",
+     "fields_added": ["completeness_tier", "confidence_level", "backfilled_fields", "missing_reason"],
+     "why": "旧的三档 source_confidence（S/A/B-Tier）把「有几个源背书」与「这行地址多完整」缝在一根轴上，读的人无法回答两个不同问题：①这行能不能直接用（完整性）②这行的证据有多硬（源票）。派单（muse-000146）明令拆成两列并列，不许合成一列；且旧的 Overture 口径在 2026-11-22 四州抽检中被修正（TX 100% NAD 自证、CA 0%、MA 州内 0%），confidence_level 的定义必须把「Overture 0 票」写死在值域里",
+     "rejected": "方案 A（合成一列 qual_tier = S1/S2/A1/A2/B1/B2 六档）：看似省一列，实际把两个正交轴压成偏序，遇到「完整性 S 但只有单源」「完整性 C 但有双源」这类真实组合就无档可放，下游任何「按完整性筛」或「按票数筛」都要再拆一次字符串；且六档无法与旧三档一一映射（旧档只约束票数），迁移期读旧新两套会得到互相矛盾的结论。故否，改为两列并列 + 显式映射表"}
   ],
   "grain": "一行 = 一条标准化后的美国门牌地址记录；作用域 = 单个县（county_fips）",
   "geom": {
@@ -39,7 +44,9 @@
     "county_scope_cost": "页面作用域是单县，几何可能散在多个源层 → 按县做几何边车（一遍 map-reduce）后，页面渲染即无 join"
   },
   "current_state": {
-    "at": "2026-10-30",
+    "at": "2026-11-22",
+    "rev4": "rev4 的 4 个新列（completeness_tier / confidence_level / backfilled_fields / missing_reason）当前恒为「不存在」——writer（scripts/gold_coalesce.py 的 process_county）尚未实现，全仓 *.py 对这 4 个名字 0 引用；在此之前任何 gold 行都没有这些 key，下游必须按 .get() 读取",
+    "rev4_when": "Phase 1b/1c（写入层改造）完成并重跑后才有值；在 MANIFEST 声明 tiers_filled=true 之前，下游不得假定两轴列非空",
     "rings_ref": "恒为 null —— 本文件定义了该字段，但目前没有任何一条 gold 行带值（连 key 都还没写进产物）",
     "geom_bbox": "恒为 null（同上）",
     "why_not_filled": "三仓几何尚未落盘；且二仓 gold 的 writer（scripts/gold_coalesce.py 的 process_county，row 字典 :854-886）目前只写 32 个主字段 + 19 个 provenance —— rev2 的 4 个与 rev3 的 2 个字段一个都没实现（全仓 *.py 对 src_kind / rings_ref / geom_bbox 均 0 引用）",
@@ -116,23 +123,98 @@
     {"name": "src_layer_url",       "type": "string",       "note": "三仓专有：源层 ArcGIS REST 端点（仅记录，不用于回抓）"},
     {"name": "src_parcel_id",       "type": "string",       "note": "三仓专有：仅 parcel_situs 行有值（ParcelID/APN/PIN/PARCEL_NUMBER）；点层与线层恒为 null"},
     {"name": "rings_ref",           "type": "string",       "note": "rev3 新增：几何指针 geom://<src_layer_id>/<src_oid>；点层/无几何层/退化几何 = null。口径见顶层 `geom`"},
-    {"name": "geom_bbox",           "type": "array<float>|null", "note": "rev3 新增：[minLon, minLat, maxLon, maxLat]（6 位小数），给空间过滤用，省一次 deref；无几何 = null"}
+    {"name": "geom_bbox",           "type": "array<float>|null", "note": "rev3 新增：[minLon, minLat, maxLon, maxLat]（6 位小数），给空间过滤用，省一次 deref；无几何 = null"},
+    {"name": "completeness_tier",   "type": "enum",          "note": "rev4 新增：完整性轴，S|A|B|C，口径逐字见顶层 tiers.completeness_tier（严禁与 confidence_level 合成一列）"},
+    {"name": "confidence_level",    "type": "enum",          "note": "rev4 新增：源票轴，L1|L2|L3，口径逐字见顶层 tiers.confidence_level；Overture 一律 0 票"},
+    {"name": "backfilled_fields",   "type": "array<string>", "note": "rev4 新增：本行哪些字段是「标准表唯一回填」得来的（可能为空数组）；与 zip_source/postal_city_source 互相印证"},
+    {"name": "missing_reason",      "type": "enum|null",     "note": "rev4 新增：缺什么为什么缺（能解释 completeness_tier 为何没到 S）；无缺失 = null，值域见 enums.missing_reason"}
   ],
   "enums": {
     "addr_type": ["Residential", "Residential (Multi-Unit)", "Commercial", "Unknown"],
     "source_confidence": ["S-Tier", "A-Tier", "B-Tier"],
-    "zip_source": ["nad_native", "zcta_derived", null],
-    "postal_city_source": ["nad_post_city", "place_derived", null],
+    "zip_source": ["nad_native", "zcta_derived", null, "oa_native", "ovt_native", "backfill_zcta"],
+    "postal_city_source": ["nad_post_city", "place_derived", null, "oa_city", "backfill_nad_zip"],
     "municipal_city_source": ["nad_inc_muni", "tiger_place", null],
     "tiger_verify": ["range", "street", "none"],
-    "src_kind": ["address_point", "parcel_situs", "street_line"]
+    "src_kind": ["address_point", "parcel_situs", "street_line"],
+    "completeness_tier": ["S", "A", "B", "C"],
+    "confidence_level": ["L1", "L2", "L3"],
+    "missing_reason": [null, "upstream_no_number", "upstream_no_zip", "upstream_no_city",
+                       "no_zip_no_city", "street_only", "no_number_no_zip", "out_of_scope", "other"],
+    "_enum_policy": "rev4 起：enums 只许追加取值，不许删除、不许改名（scripts/check_schema_rev.py 会断言）"
   },
   "grade_rules": {
+    "status": "SUPERSEDED-BY-tiers（rev4）：旧三档只约束「源票数」，不描述「这行有多完整」。旧产物、旧报表里出现的 S/A/B-Tier 继续按本段原义理解；新产物必须同时写 completeness_tier 与 confidence_level，不得再用三档代表整体质量",
     "S-Tier": "独立源 >= 2 且含 TIGER 号段区间命中（range_verified）",
     "A-Tier": "独立源 >= 2 但 TIGER 仅街名命中或无命中",
     "B-Tier": "只有 1 个独立源（默认不进入精品库，仅留审计）",
     "independent_sources": ["NAD", "TIGER", "OpenAddresses"],
-    "overture_note": "Overture 上游溯源 NAD（实测 99.68% NAD + 0.32% open_addresses），不计独立票，仅保留溯源列"
+    "overture_note": "Overture 上游溯源 NAD（本条原文写于 2026-10-2x，实测 99.68% NAD + 0.32% open_addresses）—— 2026-11-22 四州抽检已修正：TX 100% provider=nad（自证）、CA 0%、FL 0.44%、MA 州内 0%。Overture 一律 0 票（只留溯源），且 TX 这类同源州即使抬档也算自证，必须排除。证据：docs/PHASE0-OVERTURE-SOURCES-PROBE.md",
+    "superseded_by": "tiers",
+    "mapping_to_confidence_level": {
+      "S-Tier": "L1（且 tiger_verify=range）",
+      "A-Tier": "L1（tiger_verify∈{street,none}）",
+      "B-Tier": "tiger_verify=range ? L2 : L3",
+      "_note": "映射是单向且可执行的：旧档 → confidence_level。反向不成立（L1 不包含 TIGER 条件，一个 L1 行可能是旧 S-Tier 也可能是旧 A-Tier）"
+    },
+    "completeness_tier_is_not_derivable": "completeness_tier 无法从旧三档推出：旧档只看源票数，对门牌/邮编/城市的有无零约束。经验上 S-Tier/A-Tier 绝大多数落在 S/A（因为双源要求通常含 NAD 门牌行），但那是经验不是定义，下游不得据此反推",
+    "source_confidence": "保留（不降级）：primary_fields #26 的取值、类型、语义一字未改，继续写 S-Tier/A-Tier/B-Tier，保证旧读方不炸；它是「兼容字段」，不再是质量总分的唯一口径。新的三列（confidence_level / completeness_tier / missing_reason）各自独立记录，source_confidence_detail 继续记文字明细"
+  },
+  "tiers": {
+    "_note": "rev4 新增分级口径。两个轴正交，严禁合成一列（muse 明令，合成即返工）；`**…**` 为派单原文强调记号，保留不改词",
+    "completeness_tier": {
+      "field": "completeness_tier",
+      "axis": "「这行地址多完整」—— 只看成品字段的完整度，不看有几个源背书",
+      "values": ["S", "A", "B", "C"],
+      "definitions": {
+        "S": "原生门牌 + 街/城/县/州/邮编/坐标全齐（其中邮编/城/县**允许**标准表唯一回填）",
+        "A": "原生门牌，但缺邮编和/或缺城市",
+        "B": "缺门牌 + 邮编",
+        "C": "仅道路（无门牌无邮编）"
+      },
+      "native_means": "「原生」= 值直接来自上游源行，不是查表推出来的；回填只允许「标准表唯一命中」（ZCTA→zip5、TIGER places→城市、admin_registry→县/州）且必须同时写进 backfilled_fields",
+      "who_fills": "二仓 writer（scripts/gold_coalesce.py 的 process_county）在逐行组装时算；三仓 intake 行同理按本口径自算",
+      "when_filled": "每一行必填（不允许 null，不允许空串）；行写进 ndjson 之前就要算好，不得事后再补跑一轮",
+      "downstream_must_not_assume": "可假定非空且取值为 S/A/B/C 四值之一；但**不得**假定 S 就代表可直接发布——S 只保证完整性，证据硬度看 confidence_level；也不得用 completeness_tier 当去重键或投票依据",
+      "writer_status": "rev4 定义、writer 尚未实现：scripts/gold_coalesce.py 当前不写本列（见 current_state.rev4），在此之前任何 gold 行都没有该字段"
+    },
+    "confidence_level": {
+      "field": "confidence_level",
+      "axis": "「这行的证据有多硬」—— 只看独立源票数与 TIGER 号段校验，不看字段完整度",
+      "values": ["L1", "L2", "L3"],
+      "definitions": {
+        "L1": "独立源 ≥ 2 票（**Overture 0 票**，只留溯源）",
+        "L2": "单独立源 + TIGER range 命中",
+        "L3": "纯单源且未过 TIGER range"
+      },
+      "vote_rule": "可计票的独立源只有 NAD / OpenAddresses / TIGER 三家；Overture 永不计票（包括 TX 这类 100% NAD 同源州，计了就是自证）；TIGER 计票仅当 tiger_verify=range（且 tiger_distance_m<=60）",
+      "who_fills": "二仓 writer 在逐行组装时算（票数来自 oa_votes / ovt_votes / nad_keys 与 tiger_check 的返回值）",
+      "when_filled": "每一行必填（不允许 null）；与 completeness_tier 同一时机算完，两者互不覆盖",
+      "downstream_must_not_assume": "可假定非空且为 L1/L2/L3；不得把 L1 当「完整性好」（L1 可能存在缺邮编的 A 档行），也不得在未声明 Overture 溯源口径的旧数据上重算（旧产物无 ovt 票数明细）"
+    },
+    "backfilled_fields": {
+      "field": "backfilled_fields",
+      "axis": "哪些主字段的值是标准表回填（非原生）",
+      "type": "array<string>，元素取自 primary_fields 的名字白名单：zip5 / postal_city / municipal_city / county_name / state_abbr / state_name / state_fips / latitude / longitude",
+      "empty_means": "空数组 = 整行全原生（不是 null，不许用 null 代表「没回填」）",
+      "consistency": "postal_city 入列时 postal_city_source 必须是 place_derived / oa_city / backfill_nad_zip；zip5 入列时 zip_source 必须是 zcta_derived / backfill_zcta——两个来源列与数组必须自洽，不得互相矛盾",
+      "who_fills": "二仓 writer 在逐行组装时累加（每回填一个字段就 append 一次）",
+      "when_filled": "每一行必填（可为空数组）；与 completeness_tier 同一时机",
+      "downstream_must_not_assume": "只能假定「数组里的字段不是原生值」；不得假定数组外一定全是原生（历史行可能缺列）；下游要做「原生数据质量分析」必须显式过滤 backfilled_fields"
+    },
+    "missing_reason": {
+      "field": "missing_reason",
+      "axis": "缺什么、为什么缺（用于解释 completeness_tier 为何未到 S）",
+      "type": "enum|null（值域见 enums.missing_reason）；completeness_tier=S 时必须为 null，非 S 时不得为 null",
+      "who_fills": "二仓 writer 在判 completeness_tier 的同一个分支里写（不允许事后推断）",
+      "when_filled": "每一行必填：S → null；A/B/C → 落在值域内的原因码（多个缺失并列时用合并码，如 no_zip_no_city；无法归类才用 other 并在 source_confidence_detail 留原文）",
+      "downstream_must_not_assume": "可假定「S ⇒ null」与「非 S ⇒ 非 null」两条不变量，但不得假定缺失原因只能有一个（合并码如 no_zip_no_city 已表达多缺失）"
+    },
+    "two_axes_orthogonality": {
+      "rule": "completeness_tier 与 confidence_level 不得互相推导，也不得合成为一个总分字段",
+      "legal_combos": "S×L1 / A×L1 / A×L2 / B×L3 / C×L3 等均可能出现（例：S×L2 = 字段全齐但只单源；C×L1 = 只有道路名但双源都能对上街名）",
+      "forbidden": "禁止新增形如 qual_tier=S1/A2 的合成列；禁止把 confidence_level 写进 completeness_tier 的值域"
+    }
   },
   "funnel": {
     "invariant": "input_rows == output_rows + out_of_bounds + malformed + unendorsed_orphan + dedup",

@@ -16,7 +16,14 @@
 注意：「已采集县数 == roster 县数」**不是**判据 —— 一仓只对 NAD 有覆盖的县产片
 （SD 7/66、HI 0/5 均为合法），counties_empty 是合法状态。
 
-退出码：0 = sealed；2 = partial/missing（拒绝开跑）
+退出码：0 = sealed；1 = F16 阻塞（未关闭 P0 / 清单缺失或非法）；2 = partial/missing（拒绝开跑）
+
+F16 阻塞门禁（2026-11-22 rev4 接）：
+  读 config/f16_blockers.json（`--f16-blockers` 可改路径），存在任一 severity=P0 且 state!=closed → exit 1，
+  stderr 打出未关闭编号。清单缺失 / JSON 坏 / schema 不对 / 条目缺 id·state / closed 但无 evidence
+  → 也是 exit 1（fail-closed，不许「读不到就当没有」）。
+  `--bypass-f16` 只给手动 workflow_dispatch 用：放行，但必须把 bypass_f16=true + 未关闭编号
+  写进 $GITHUB_STEP_SUMMARY（无该环境变量时打到 stderr），并在 --json-out 里留 f16 记录。
 """
 
 from __future__ import annotations
@@ -29,6 +36,107 @@ from pathlib import Path
 
 def log(msg: str) -> None:
     print(f"[preflight] {msg}", flush=True)
+
+
+# ---------------------------------------------------------------- F16 阻塞门禁
+F16_SCHEMA = "f16-blockers/v1"
+F16_DEFAULT = "config/f16_blockers.json"
+F16_SEV = ("P0", "P1", "P2")
+F16_STATE = ("open", "closed")
+
+
+def f16_gate(path: Path, bypass: bool = False) -> dict:
+    """读阻塞清单并判定。返回 {rc, open_p0, errors, notes, bypassed, missing_file}
+
+    fail-closed：任何「读不懂」的情形都是 rc=1，不是「没有阻塞」。
+    """
+    res = {"rc": 1, "open_p0": [], "errors": [], "notes": [],
+           "bypassed": bool(bypass), "path": str(path), "counts": {}}
+    if not path.exists():
+        res["errors"].append(f"F16 清单不存在：{path}（fail-closed：清单缺失视为有阻塞）")
+        return res
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        res["errors"].append(f"F16 清单无法解析：{exc}")
+        return res
+    if not isinstance(doc, dict) or doc.get("schema") != F16_SCHEMA:
+        res["errors"].append(f"F16 清单 schema 必须是 {F16_SCHEMA}，实得 {doc.get('schema') if isinstance(doc, dict) else type(doc).__name__}")
+        return res
+    blockers = doc.get("blockers")
+    if not isinstance(blockers, list) or not blockers:
+        res["errors"].append("F16 清单 blockers 必须是非空数组")
+        return res
+
+    p0_open, p1_open, closed = [], [], 0
+    for i, b in enumerate(blockers):
+        if not isinstance(b, dict):
+            res["errors"].append(f"blockers[{i}] 不是对象")
+            continue
+        bid = str(b.get("id") or "").strip()
+        sev = str(b.get("severity") or "").strip()
+        st = str(b.get("state") or "").strip()
+        if not bid:
+            res["errors"].append(f"blockers[{i}] 缺 id")
+            continue
+        if sev not in F16_SEV:
+            res["errors"].append(f"{bid}: severity={sev!r} 不在 {F16_SEV}")
+            continue
+        if st not in F16_STATE:
+            res["errors"].append(f"{bid}: state={st!r} 不在 {F16_STATE}")
+            continue
+        if st == "closed":
+            closed += 1
+            if not str(b.get("evidence") or "").strip():
+                res["errors"].append(f"{bid}: state=closed 但没写 evidence（关闭必须有验证证据）")
+            continue
+        if sev == "P0":
+            p0_open.append(bid)
+        elif sev == "P1":
+            p1_open.append(bid)
+    res["counts"] = {"blockers": len(blockers), "closed": closed,
+                     "p0_open": len(p0_open), "p1_open": len(p1_open)}
+    res["open_p0"] = p0_open
+    res["open_p1"] = p1_open
+    if res["errors"]:
+        return res
+    if p0_open:
+        if bypass:
+            res["rc"] = 0
+            res["notes"].append("⚠️ F16 豁免（bypass_f16=true，仅手动作业）：未关闭 P0 = %s" % ", ".join(p0_open))
+        else:
+            res["rc"] = 1
+        return res
+    res["rc"] = 0
+    res["notes"].append("F16 阻塞清单无未关闭 P0（共 %d 条，已关 %d）" % (len(blockers), closed))
+    return res
+
+
+def f16_record(res: dict) -> str:
+    """把豁免/拦截写进 step summary（无 GITHUB_STEP_SUMMARY 环境时打到 stderr）。"""
+    import os
+    lines = [
+        "### %s F16 阻塞门禁" % ("⚠️ 已豁免" if res.get("bypassed") else ("🚫 拦截" if res.get("rc") else "✅ 通过")),
+        "",
+        "- 清单：`%s`（%s）" % (res.get("path"), res.get("counts") or "-"),
+        "- bypass_f16：**%s**" % ("true" if res.get("bypassed") else "false"),
+        "- 未关闭 P0：%s" % (", ".join("`%s`" % x for x in res.get("open_p0") or []) or "无"),
+    ]
+    if res.get("open_p1"):
+        lines.append("- 未关闭 P1（不阻断，仅供参考）：%s" % ", ".join(res["open_p1"]))
+    for e in res.get("errors") or []:
+        lines.append("- ❌ %s" % e)
+    text = "\n".join(lines) + "\n"
+    p = os.environ.get("GITHUB_STEP_SUMMARY")
+    if p:
+        try:
+            with open(p, "a", encoding="utf-8") as fh:
+                fh.write(text)
+        except Exception:  # noqa: BLE001
+            print(text, file=sys.stderr)
+    else:
+        print(text, file=sys.stderr)
+    return text
 
 
 def check(manifest_path: Path, expect_state: str | None,
@@ -153,7 +261,29 @@ def main(argv=None) -> int:
     ap.add_argument("--raw-dir", help="等价写法：<raw-dir>/MANIFEST.json")
     ap.add_argument("--json-out", help="把结论写成 json（供 workflow 消费）")
     ap.add_argument("--assets", help="Release 实物清单（每行 名字\\t大小）；缺省时试 <raw-dir>/assets.txt")
+    ap.add_argument("--f16-blockers", default=F16_DEFAULT,
+                    help="F16 阻塞清单路径（默认 config/f16_blockers.json）")
+    ap.add_argument("--bypass-f16", action="store_true",
+                    help="豁免 F16 阻塞（只给手动 workflow_dispatch 用；会写入 step summary 留痕）")
     args = ap.parse_args(argv)
+
+    # ---- F16 阻塞门禁：先判，fail-closed ----
+    gate = f16_gate(Path(args.f16_blockers), bypass=args.bypass_f16)
+    f16_record(gate)
+    for n in gate["notes"]:
+        log(n)
+    if gate["rc"] != 0:
+        for e in gate["errors"]:
+            print(f"[preflight] ❌ F16 {e}", file=sys.stderr, flush=True)
+        if gate["open_p0"]:
+            print("[preflight] 🚫 F16 阻塞：未关闭 P0 = %s（修完或手动 bypass_f16=true 后重跑）"
+                  % ", ".join(gate["open_p0"]), file=sys.stderr, flush=True)
+        if args.json_out:
+            Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.json_out).write_text(json.dumps(
+                {"status": "f16_blocked", "f16": gate}, ensure_ascii=False, indent=1),
+                encoding="utf-8")
+        return 1
 
     mpath = Path(args.manifest) if args.manifest else Path(args.raw_dir or ".") / "MANIFEST.json"
     apath = Path(args.assets) if args.assets else (
@@ -165,8 +295,11 @@ def main(argv=None) -> int:
         log(f"❌ {e}")
 
     if args.json_out:
+        Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
         Path(args.json_out).write_text(json.dumps(
-            {"status": status, "phase": phase, "errors": errors, "warnings": warns},
+            {"status": status, "phase": phase, "errors": errors, "warnings": warns,
+             "f16": {"bypassed": gate["bypassed"], "open_p0": gate["open_p0"],
+                     "counts": gate["counts"]}},
             ensure_ascii=False, indent=1), encoding="utf-8")
 
     if status != "sealed":
