@@ -18,8 +18,10 @@ on:
       bbox:
         description: 包围盒 W,S,E,N
         default: "-75.60,39.10,-75.45,39.22"
-  schedule:
-    - cron: "0 6 * * *"        # 每天 06:00 UTC 自动跑一轮（探针式，故意不频繁）
+
+# 2026-11-22 止损：已删 schedule（原 `0 6 * * *` 每天 06:00 UTC 自动跑一轮）。
+# 原因：Phase 0 排雷期间不许有定时 run 往 main 里写 data/docs；只保留手动触发。
+# 手动跑法：Actions → dover-fetch → Run workflow（inputs 默认值未变：DE / Dover / 19901 / 原 bbox）。
 
 permissions:
   contents: write              # 产物要提交回 main
@@ -54,8 +56,6 @@ jobs:
       - name: 展示产物
         run: |
           find data/dover -type f -printf '%10s  %p\n' | sort -k2 | head -40
-          echo "--- align 前 5 行 ---"
-          head -5 data/dover/align_19901_main_state.csv || true
 
       - name: 提交产物回 main
         run: |
