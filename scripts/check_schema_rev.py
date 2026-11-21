@@ -22,10 +22,18 @@
      c) 两轴不许合成：tiers 必须声明正交性禁令，且禁止出现形如 qual_tier 的合成列
      d) grade_rules 必须显式声明 superseded_by=tiers + 旧档→confidence_level 单向映射 + source_confidence 处置
      e) enums.completeness_tier / enums.confidence_level 必须与 tiers 的值域一致
+  7. rev>=4 另需 coverage 段（覆盖率契约）：
+     a) counties_expected 带 path/vintage/sha256/county_count，且文件真存在、sha256 与 county_count 能对上
+     b) 显式禁止 counties_done / counties_declared 当分母（deprecated_denominators）
+     c) coverage_status 四值（ok / empty_upstream_confirmed / empty_anomaly / failed）
+        + deprecated_values 含 "empty" + 迁移说明；且与 enums.coverage_status 一致
+     d) verification 两值（verified / unverified）且不得混进 coverage_status
+     e) status_fields.keys 含 6 个 counties_* 键名（派单原文重复了一次 counties_done）
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -119,9 +127,9 @@ def check(base: dict, head: dict, want_rev: int) -> dict:
 
     # ⑤ 顶层键白名单（只允许 rev/rev_log/geom 变化 + 字段数组追加 + 分级口径段 + 现状声明）
     #   current_state：必填的「现状护栏」（字段已定义但恒为 null 时必须写明），属纯追加元数据
-    #   enums / grade_rules / tiers：rev4 起的两轴分级口径（enums 只许追加，见 ⑥）
+    #   coverage：rev4 内追加的覆盖率口径段（唯一法定分母 + 状态枚举 + 计数键名），同属纯追加元数据
     allow = {"rev", "rev_log", "geom", "provenance_fields", "current_state",
-             "enums", "grade_rules", "tiers"}
+             "enums", "grade_rules", "tiers", "coverage"}
     for k in sorted(set(base) | set(head)):
         if k in allow:
             continue
@@ -211,6 +219,85 @@ def check(base: dict, head: dict, want_rev: int) -> dict:
             errs.append("rev4 新列没进 provenance_fields：%s" % miss_cols)
         else:
             notes.append("rev4 四列均在 provenance_fields（provenance %d → %d）" % (len(b_pv), len(h_pv)))
+
+        # ⑦ coverage 段：唯一法定分母 + 四值状态 + 两值 verification + 6 个计数键名
+        #    这一段是「覆盖率算给谁看」的硬契约，缺一项就有人会把 counties_done 当分母（永远 100%）
+        cov = head.get("coverage") or {}
+        if not cov:
+            errs.append("缺顶层 coverage 段（覆盖率唯一法定分母 + coverage_status + verification 必须写进 SCHEMA）")
+        else:
+            ce = cov.get("counties_expected") or {}
+            if not ce:
+                errs.append("coverage.counties_expected 缺失（分母没有固定基准表就等于没有分母）")
+            else:
+                for k in ("path", "vintage", "sha256", "county_count"):
+                    if ce.get(k) in (None, "", [], {}):
+                        errs.append("coverage.counties_expected 缺 %s（基准表必须自描述：路径+vintage+指纹+规模）" % k)
+                if not str(ce.get("denominator_rule") or "").strip():
+                    errs.append("coverage.counties_expected.denominator_rule 缺失（必须写死「唯一法定分母」）")
+                banned = {"counties_done", "counties_declared"}
+                if not banned.issubset(set(ce.get("deprecated_denominators") or [])):
+                    errs.append("coverage.counties_expected.deprecated_denominators 必须显式禁止 %s 当分母"
+                                % sorted(banned))
+                # 分母必须在仓里真的存在，且 sha256/county_count 能对上（“写了引用但没表”也要报）
+                bp = REPO / str(ce.get("path") or "")
+                if not ce.get("path") or not bp.exists():
+                    errs.append("基准表文件不存在：%s" % (ce.get("path") or "<空>"))
+                else:
+                    try:
+                        bdoc = json.loads(bp.read_text(encoding="utf-8"))
+                    except Exception as exc:                       # noqa: BLE001
+                        errs.append("基准表解析失败：%s（%s）" % (ce.get("path"), exc))
+                        bdoc = {}
+                    rows = bdoc.get("counties") or []
+                    got = hashlib.sha256(json.dumps(rows, ensure_ascii=False, sort_keys=True,
+                                                    separators=(",", ":")).encode("utf-8")).hexdigest()
+                    if bdoc and got != ce.get("sha256"):
+                        errs.append("基准表 sha256 不符：SCHEMA=%s 实测=%s（分母被改过就是口径被改过）"
+                                    % (str(ce.get("sha256"))[:12], got[:12]))
+                    if bdoc and len(rows) != bdoc.get("county_count"):
+                        errs.append("基准表 county_count=%r 与实际行数 %d 不符"
+                                    % (bdoc.get("county_count"), len(rows)))
+                    if bdoc and ce.get("county_count") not in (None, len(rows)):
+                        errs.append("SCHEMA.counties_expected.county_count=%r 与基准表行数 %d 不符"
+                                    % (ce.get("county_count"), len(rows)))
+                    if bdoc:
+                        notes.append("基准县表实测可用：%d 县 / sha256 对得上" % len(rows))
+
+            cs = cov.get("coverage_status") or {}
+            want_cs = ["ok", "empty_upstream_confirmed", "empty_anomaly", "failed"]
+            if list(cs.get("values") or []) != want_cs:
+                errs.append("coverage.coverage_status.values = %r，期望 %r" % (cs.get("values"), want_cs))
+            if "empty" not in (cs.get("deprecated_values") or []):
+                errs.append("coverage.coverage_status.deprecated_values 必须含 \"empty\"（旧单值作废要显式声明）")
+            if not str(cs.get("migration") or "").strip():
+                errs.append("coverage.coverage_status.migration 缺失（旧 empty 产物怎么处理必须写清：只读不改/新产物不许出）")
+            if [v for v in (h_en.get("coverage_status") or [])] != want_cs:
+                errs.append("enums.coverage_status = %r 与 coverage.coverage_status.values %r 不一致"
+                            % (h_en.get("coverage_status"), want_cs))
+
+            vf = cov.get("verification") or {}
+            if list(vf.get("values") or []) != ["verified", "unverified"]:
+                errs.append("coverage.verification.values = %r，期望 ['verified','unverified']（warn 级标记）"
+                            % vf.get("values"))
+            if [v for v in (h_en.get("verification") or [])] != ["verified", "unverified"]:
+                errs.append("enums.verification 必须 = ['verified','unverified']，且不得混进 coverage_status")
+            if "unverified" in (h_en.get("coverage_status") or []):
+                errs.append("verification 被塞进了 coverage_status 枚举（它是 warn 标记，不是第五个状态值）")
+
+            sf = cov.get("status_fields") or {}
+            want_keys = {"counties_expected", "counties_done", "counties_declared",
+                         "counties_with_any_rows", "counties_with_nad_rows",
+                         "counties_nad_substantive"}
+            got_keys = set(sf.get("keys") or [])
+            if not want_keys.issubset(got_keys):
+                errs.append("coverage.status_fields.keys 缺：%s" % sorted(want_keys - got_keys))
+            if not str(sf.get("_dispatch_note") or "").strip():
+                errs.append("coverage.status_fields 缺 _dispatch_note（派单列了 7 个名字其中 counties_done 重复，必须写明去重口径）")
+            if "counties_expected" not in (sf.get("definitions") or {}):
+                errs.append("coverage.status_fields.definitions 缺 counties_expected 的定义")
+            if not errs:
+                notes.append("coverage 段齐：唯一分母（3,144 县基准表）+ coverage_status 四值/deprecated empty + verification 两值 + 6 个计数键名")
 
     return {"ok": not errs, "errors": errs, "notes": notes,
             "base_rev": base.get("rev"), "head_rev": head.get("rev"),
