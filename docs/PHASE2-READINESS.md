@@ -70,3 +70,9 @@
   - READY-6.2 **校验结构化回执**：只认带 `run_id / status / head_sha / layers` 的结构化回执，
     文本「已派」不算；无回执即判派单失败
 - **判据**：绕过 wrapper 直接 `gh workflow run` 的键在 CI 里不可用（或事后必被审计标记）
+
+## 七、约束与风险（禁做项，不随阶段解锁）
+
+| # | 项 | 状态 | 约束与判据 |
+|---|---|---|---|
+| READY-7.1 | **简化几何禁用于面积/长度计算** | `frozen`（红线，不适用 pending 流程） | 简化几何（simplified geometry）**禁用于面积/长度计算**；任何面积/长度计算必须改用未化简的 **cb（cartographic boundary）或 PL 文件**。依据 muse-000157 二；几何包选源留痕见 `config/baseline/county_geom_manifest.json`（仓内 `counties_geom.json.gz` 的 `max_allowable_offset_deg=0.001`、`coordinate_decimals=5` 即已化简，只够做 D2 点-in-县判定）。判据：面积/长度计算代码若引用 `config/baseline/counties_geom.json.gz` 或任何 `*_500k` / 化简几何源即判违规，必须改引未化简 cb 或 PL 文件 |
