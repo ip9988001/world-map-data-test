@@ -1,0 +1,145 @@
+{
+  "schema": "f16-blockers/v1",
+  "generated_at": "2026-11-22T00:00:00Z",
+  "by": "Phase1a rev4（muse-000146 第 1 片）",
+  "why": "F16 门禁：二仓重启前必须把「已知未关闭的 P0 阻塞项」变成可执行判据，而不是靠人记得。scripts/gold_preflight.py 读本文件，存在任一 state != \"closed\" 的 P0 → exit 1（fail-closed）。",
+  "bypass_allowed": true,
+  "bypass_rule": "只许手动 workflow_dispatch 且显式传 bypass_f16=true；豁免必须把 bypass_f16=true + 未关闭编号清单写进该次 run 的 step summary（不允许静默豁免）。定时/被调用（workflow_call）路径不得默认放行。",
+  "severity_rule": "只有 severity=P0 且 state!=closed 才拦截；P1/P2 记录在案但不阻断（否则门禁会常年红，等于没有门禁）",
+  "how_to_close": "改 state 为 \"closed\" 时必须同时补 closed_at + closed_by + evidence（修法 commit / 验证输出），否则视为结构非法，preflight 直接 exit 1。",
+  "source_docs": [
+    "修复车间/修复修正进度记录.md（P0 分级来源：G1~G4）",
+    "修复车间/0-修复修正总方案.md（第二节 Bug 清单按严重度分级）",
+    "docs/WORKFLOW-FAILURE-LEDGER.md（W2-xxx 编号与「未修」标注）",
+    "docs/RESTART-CHECKLIST-2026-10-31.md（重启前置项 1~4）",
+    "docs/PHASE0-NH-RELEASE-AUDIT.md（2026-11-22 假绿结论，用于 P1-FALSE-GREEN）"
+  ],
+  "source_gaps": [
+    "本仓没有权威的 P0 编号表：G1~G4 的 P0 分级只出现在 修复车间 的两份文档里，W2-xxx 台账不分级（只标「未修」）；本文件的 severity 是按下述规则归的：数据静默错/门禁失效 → P0；口径漂移/单点故障 → P1；工程债 → P2。",
+    "三仓 F16 台账（docs/WORKFLOW-FAILURE-LEDGER.md + collect/preflight_dispatch.py）的解析式判据尚未接入本仓，见 F16-LEDGER。",
+    "W2-019 的复发次数台账记 1；是否已在其它分支修掉无法从 main 复核（本仓 main 的 street_key 仍是旧实现），故按未关闭处理。"
+  ],
+  "blockers": [
+    {
+      "id": "G1",
+      "severity": "P0",
+      "state": "closed",
+      "title": "溢出型州必崩（nad_rows=None 却用 :>7 格式化）",
+      "source": "修复车间/修复修正进度记录.md 第 0 期表 + 第 1 期改法",
+      "note": "已修：gold_scope.py 打印行不再对空值做数字格式化（NAD=—）；离线 T2（溢出型州不崩）+ 真跑 NH 复核。",
+      "closed_at": "2026-10-21",
+      "closed_by": "修复车间 第 1 期 (A 段止血)",
+      "evidence": "tests/test_gold_offline.py T2；修复车间/修复修正进度记录.md 第 1 期验证段"
+    },
+    {
+      "id": "G2",
+      "severity": "P0",
+      "state": "closed",
+      "title": "scope 只读账本、不从实物重建（AK 23 个县片被无视）",
+      "source": "修复车间/修复修正进度记录.md 第 0 期表 + 第 1 期改法",
+      "note": "已修：新增 shard_fips()/shard_key()，county_fips / fips / 文件名三种来源都认；离线 T1/T3 + 真跑 AK 复核。",
+      "closed_at": "2026-10-21",
+      "closed_by": "修复车间 第 1 期",
+      "evidence": "tests/test_gold_offline.py T1/T3"
+    },
+    {
+      "id": "G3",
+      "severity": "P0",
+      "state": "closed",
+      "title": "addrfeat 漏记即整州拒跑（ID 漏 43 个、实物在）",
+      "source": "修复车间/修复修正进度记录.md 第 0 期表 + 第 1 期改法",
+      "note": "已修：缺 addrfeat 的县写进 scope.skipped_counties 并只跳该县；preflight 对 ID 出 WARN 而非 exit 1。离线 T4。",
+      "closed_at": "2026-10-21",
+      "closed_by": "修复车间 第 1 期",
+      "evidence": "tests/test_gold_offline.py T4；scripts/gold_preflight.py 的 addrfeat WARN 分支"
+    },
+    {
+      "id": "G4",
+      "severity": "P0",
+      "state": "closed",
+      "title": "preflight C4 把州级三数 matches=False 当失败（与一仓「仅参考」口径冲突）",
+      "source": "修复车间/修复修正进度记录.md 第 0 期表 + 用户裁决",
+      "note": "已修：C4 由 error 降为 warning（一仓县级口径下州级三数常态 False）。离线 T5。",
+      "closed_at": "2026-10-21",
+      "closed_by": "修复车间 第 1 期（用户裁决：州级三数仅参考、不得据此拒跑）",
+      "evidence": "tests/test_gold_offline.py T5"
+    },
+    {
+      "id": "W2-019",
+      "severity": "P0",
+      "state": "open",
+      "title": "street_key() 三处硬错 → 已发布 15 州 gold 的去重口径不可引用",
+      "source": "docs/WORKFLOW-FAILURE-LEDGER.md W2-019（复发 1）",
+      "note": "未修：① Unicode 被 PUNCT 删（CAÑON→CA ON）；② 名字里的后缀词劫持 type（BRIDLE CREEK+BLVD→CREEK|BRIDLE）；③ 方向词整体丢弃（E/W MAIN ST 同键）。main 上 scripts/gold_coalesce.py:127-147 仍是旧实现。影响：去重结果与「独立地址数」系统性偏差，15 州 gold 数字不得对外引用。",
+      "close_condition": "把三仓 collect/lib/addrkey.py 的 v3 规则移植进 gold_coalesce.street_key()，且 tests 覆盖三仓 20 条对照里的 9 条；15 州按新口径重跑后才可引用。",
+      "evidence": "docs/WORKFLOW-FAILURE-LEDGER.md 1.1 口径作废声明 + 三仓 docs/08-R1-REPORT.md"
+    },
+    {
+      "id": "W2-013",
+      "severity": "P0",
+      "state": "open",
+      "title": "缓存无内容指纹：同名换内容会静默复用旧桶（三处缓存键都没有 size/hash/mtime）",
+      "source": "docs/WORKFLOW-FAILURE-LEDGER.md W2-013（未修）",
+      "note": "未修：OA 桶按包名目录、Overture 桶固定 cache_dir/overture/、Actions cache key=gold-cache-<ST>-v1，三者都不校验内容。影响：数据静默错且分源守恒不报错（最坑的一类），比崩更难发现。",
+      "close_condition": "缓存键加内容指纹（size+mtime 或上游 ETag/资产 id），命中前校验；换一版同名包后能观察到 cache miss 与行数变化。",
+      "evidence": "docs/WORKFLOW-FAILURE-LEDGER.md W2-013 行"
+    },
+    {
+      "id": "F16-GATE",
+      "severity": "P0",
+      "state": "closed",
+      "title": "二仓 gold_preflight 不读任何故障/阻塞清单（F16 门禁缺失）",
+      "source": "docs/RESTART-CHECKLIST-2026-10-31.md 第 1 项 + docs/WORKFLOW-FAILURE-LEDGER.md 头部 TODO 1",
+      "note": "本 commit 关闭「清单式」这一半：scripts/gold_preflight.py 读 config/f16_blockers.json，缺失/结构非法/有未关闭 P0 → exit 1；bypass 只走手动 dispatch 且必须留痕。台账解析式那一半仍开着（F16-LEDGER）。",
+      "closed_at": "2026-11-22",
+      "closed_by": "Phase1a rev4",
+      "evidence": "scripts/gold_preflight.py 的 f16_gate() + f16_record()；tests/test_f16_gate.py T1~T5"
+    },
+    {
+      "id": "F16-LEDGER",
+      "severity": "P0",
+      "state": "open",
+      "title": "台账解析式 F16 判据未接（RESTART-1 要求复用三仓 parse_failure_ledger/judge_failure_ledger）",
+      "source": "docs/RESTART-CHECKLIST-2026-10-31.md 第 1 项 + WORKFLOW-FAILURE-LEDGER.md TODO 1",
+      "note": "未做：本 commit 只接了「清单式」门禁（config/f16_blockers.json）。RESTART-1 还要求解析 docs/WORKFLOW-FAILURE-LEDGER.md 的表格（复发≥2 且未规避 → FAIL 等五条判据），且必须与三仓同一份实现、不许另写一份。",
+      "close_condition": "gold_preflight.py 能输出 ledger_hits[]，且 --ledger-waive 空理由返回 rc=2；判据与三仓 collect/preflight_dispatch.py 同源。",
+      "evidence": "docs/RESTART-CHECKLIST-2026-10-31.md 完成判据行"
+    },
+    {
+      "id": "W2-010",
+      "severity": "P1",
+      "state": "open",
+      "title": "文件名硬切认县（parts[3]/parts[-1]），清单里有 fips 字段却不用",
+      "source": "docs/WORKFLOW-FAILURE-LEDGER.md W2-010（未修）",
+      "note": "P1（不阻断）：命名约定一变就会县与文件错配。修法：优先读清单 fips，文件名只作兜底。",
+      "close_condition": "造一个命名不合约定但带 fips 的清单，仍能正确分县。"
+    },
+    {
+      "id": "W2-015",
+      "severity": "P2",
+      "state": "open",
+      "title": "本仓没有 CI（无 ci-smoke.yml / check_docs.py）",
+      "source": "docs/WORKFLOW-FAILURE-LEDGER.md W2-015（未修）",
+      "note": "P2（不阻断）：验收靠手工三件套（离线 unittest + compileall + 逐 workflow yaml 解析）。别拿「ci-smoke 绿」当门槛。",
+      "close_condition": "接 ci-smoke.yml（照三仓），能对 PR 自动跑三件套。"
+    },
+    {
+      "id": "W2-018",
+      "severity": "P1",
+      "state": "open",
+      "title": "单 Job 顺序跑多县、共享缓存：一个县崩整州重跑（无县级续跑）",
+      "source": "docs/WORKFLOW-FAILURE-LEDGER.md W2-018（现状未改）",
+      "note": "P1（不阻断，只烧时间）：并发单位是州不是县。",
+      "close_condition": "按县分 job 或县级断点（已出 scope.json 的县跳过），并用「中间县失败」实验证明只补该县。"
+    },
+    {
+      "id": "P1-FALSE-GREEN",
+      "severity": "P1",
+      "state": "open",
+      "title": "STATUS.ok / conservation 是漏斗恒等式，0 行也 true（NH 假绿已实锤）",
+      "source": "docs/PHASE0-NH-RELEASE-AUDIT.md（2026-11-22）",
+      "note": "P1（不阻断发布路径，但会误导读方）：gold_coalesce.py 的 ok 只表达「算术对上」，不表达「有数据」。修法：发布门禁加非算术判据（如 totals.output_rows > 0）。",
+      "close_condition": "STATUS.json 增加非算术判据位（如 nonempty=true）并被 workflow 发布步骤消费。"
+    }
+  ]
+}

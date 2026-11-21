@@ -38,6 +38,10 @@ on:
         type: string
         required: false
         default: ""
+      bypass_f16:
+        type: string
+        required: false
+        default: "false"
   workflow_dispatch:
     inputs:
       state:
@@ -58,6 +62,11 @@ on:
       volumes:
         description: 分卷模式（auto=自动发现 raw-US-<ST>-v1-p* 并合并；留空=单卷旧行为）
         default: ""
+      bypass_f16:
+        description: F16 阻塞豁免（只许手动置 true；默认 false，未关闭 P0 会直接 exit 1）
+        type: choice
+        options: ["false", "true"]
+        default: "false"
 
 permissions:
   contents: write
@@ -116,8 +125,22 @@ jobs:
             --status "data/raw/US-$ST/STATUS.json" || true
           python3 scripts/gold_preflight.py --state "$ST" \
             --raw-dir "data/raw/US-$ST" --assets "data/raw/US-$ST/assets.txt" \
-            --json-out "data/gold/US-$ST/preflight.json"
+            --json-out "data/gold/US-$ST/preflight.json" \
+            ${{ inputs.bypass_f16 == 'true' && '--bypass-f16' || '' }}
           rc=$?
+          # F16 阻塞（exit 1）= 未关闭 P0 / 清单缺失或非法 → 失败，不放行（除非上面的 bypass_f16=true）
+          if [ "$rc" -eq 1 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "### 🚫 F16 阻塞（exit 1）" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "阻塞清单：\`config/f16_blockers.json\`；bypass_f16=\`${{ inputs.bypass_f16 }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            cat "data/gold/US-$ST/preflight.json" 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::F16 存在未关闭 P0，拒绝开跑（修完或用 bypass_f16=true 手动豁免）"
+            exit 1
+          fi
           # ★ 2026-10-21 修 G8：exit 2 = 上游未就绪（一仓还在采/未封印）——
           #   这是「等一等」，不是故障。置 ready=false 跳过后续，不报红、不上哨兵报警。
           if [ "$rc" -eq 2 ]; then
