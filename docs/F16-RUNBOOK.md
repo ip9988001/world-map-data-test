@@ -59,6 +59,11 @@
   关阻塞只有一条路：修完 → 带 `evidence` 走 PR → 门禁自己变绿（`closed` 缺 `evidence` 时清单判非法，rc=1）。
 - 不许把 `bypass_f16` 默认值改成 `true`，不许在 workflow 里加「自动判断可绕过」的分支。
 - 一次 bypass 对应一次 run；跨轮复用同一句批准 = 无效。
+- **简化几何禁用于面积/长度计算**：简化几何（simplified geometry）**禁用于面积/长度计算**；
+  任何面积/长度计算必须改用未化简的 **cb（cartographic boundary）或 PL 文件**。
+  依据 muse-000157 二；几何包选源留痕见 `config/baseline/county_geom_manifest.json`。
+  （仓内 `config/baseline/counties_geom.json.gz` 就是化简包：manifest 记 `max_allowable_offset_deg=0.001`、
+  `coordinate_decimals=5`，只够做 D2 第②道「点 in 县」判定，其顶点已被位移，拿它量面积/长度必错。）
 
 ## 5. 实操（照抄即可）
 
