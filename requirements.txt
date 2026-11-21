@@ -11,3 +11,6 @@ duckdb>=1.1.0          # 读一仓 OVERTURE-US-<ST>.parquet（geoparquet 列式�
 #
 # 明确禁止（架构裁决 2026-10-18）
 #   shapely / rtree —— 空间索引一律复用引擎内自带的网格索引 + point_in_rings()
+#   判县实现位置：三仓 collect/county_tiger.py::pip() + collect/county_index.py（1° 网格索引）；
+#   二仓对应 scripts/coverage_counters.point_in_rings()（偶奇规则，天然处理洞）。
+#   定案（判词 = 维持禁令，零新依赖）见三仓 docs/DEPENDENCY-VERDICT-20261122.md
