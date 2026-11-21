@@ -129,7 +129,7 @@ ok = rows > 0
 | # | 场景 | 期望 |
 |---|---|---|
 | ① | 10 县在 counties_done，只有 3 县有 NAD 行 | `counties_with_nad_rows=3`，`counties_with_any_rows=10`，分母仍 = 基准表 10 |
-| ② | 某县 NAD 9 行 | 不进 `counties_nad_substantive`（阈值 10） |
+| ② | 某县 NAD 9 行 | 不进 `counties_nad_substantive`（9 < 绝对下限 10，且远低于该县阈值 1,778） |
 | ③ | 同县 500 行、阈值 1,778（=ceil(1%×177,734)；旧口径 600 已作废） | 不进；NAD 补到 1,800 行（融合行数不变）→ 进 |
 | ④ | 溢出包全 MA/VT/ME 的行喂给 NH | 全部落 `excluded_state_mismatch`，`counties_with_any_rows` 不得虚增 |
 | ⑤ | 真几何四类断言 | 县内点留 / 县外点剔（`excluded_geom=1`）/ `state_abbr` 不符先剔（`excluded_state_mismatch=1`，`counties_with_any_rows` 不虚增）/ 缺几何 → `missing_geometry` + `coverage_status=failed` + `verification=unverified`（**不是 skipped**） |
