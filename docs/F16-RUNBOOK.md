@@ -82,3 +82,16 @@ gh workflow run gold-coalesce.yml -R ip9988001/world-map-data-test \
 
 # 4) run 结束后把真实 run_id 回填进账本（新增一行修正行，不改旧行）
 ```
+
+## 几何选源红线
+
+> **简化几何（`cb_*_county_500k` / `cb_*_tract_500k` 等 generalized 版本）禁用于任何面积/长度计算。**
+> 做面积/长度必须换未化简的 `cb_*`（全精度）或 Census PL 文件。几何包 manifest 里的选源字段只作留痕，不构成授权。
+
+- 出处：muse-000157 第二条。
+- 边界说明：本仓 `config/baseline/counties_geom.json.gz` 是**化简包**（`county_geom_manifest.json` 记
+  `max_allowable_offset_deg=0.001`、`coordinate_decimals=5`），顶点已被位移，只够做 D2 第②道
+  「点 in 县」判定；拿它量面积/长度必错，且误差不可事后修正。
+- 留痕 ≠ 授权：manifest 只记录「这份几何从哪来、怎么抓的」，**不**等于「允许拿它算面积/长度」。
+- 判据：任何面积/长度计算代码若引用化简几何源（`*_500k`、`counties_geom.json.gz`、tract generalized），
+  即判违规，必须改引未化简 `cb`（全精度）或 Census PL 文件。

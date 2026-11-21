@@ -71,6 +71,8 @@ ok = rows > 0
   上游缺县、资产缺失、addrfeat 缺失都会让它们变小，分母跟着变小 → 覆盖率永远 100%（自证）。
 - 基准表的 `sha256`（只覆盖 `counties` 数组的规范化序列化）写在 SCHEMA 里，
   `python3 scripts/build_counties_baseline.py --check` 可离线复算。
+- **改「分母口径」必须同时改两处（`schema/SCHEMA.json` 的 `denominator_priority` + `scripts/coverage_counters.py`），
+  `tests/test_schema_consistency.py` 会在 CI 拦住只改一处。**
 
 ### 计数前两道清洗（顺序不许颠倒）
 
