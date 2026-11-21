@@ -41,6 +41,8 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+import coverage_counters as CC   # D1 判定 / D2 覆盖率计数（唯一实现，禁止另写一套）
+
 GRID = 0.001                 # 网格边长 ~85m @ lat40
 UNSAFE = "__unsafe__"        # SpatialIndex 记忆化：边界格永不缓存结论
 MATCH_METERS = 60.0
@@ -1052,6 +1054,28 @@ def main(argv=None) -> int:
                                           zcta_idx, place_idx, c["rings"], out_dir))
 
     ok = all(r["conservation_ok"] for r in results)
+
+    # ---- D2 覆盖率计数（分母 = 基准县表 counties_expected；counties_done/declared 只作观测）
+    declared_fips = [c["fips"] for c in scope.get("counties") or []]
+    missing_geom = [c["fips"] for c in counties if not c.get("rings")]
+    cov = CC.counters_from_funnels(scope["state"], results, counties_declared=declared_fips,
+                                   missing_geom=missing_geom)
+    # ---- D1 逐县 NAD 采集判定（上游声明行数 vs 实际拿到行数）
+    d1 = []
+    for r in results:
+        c = next((x for x in scope.get("counties") or [] if x.get("fips") == r.get("county")), {})
+        v = CC.d1_verdict(r.get("nad_input") or 0, c.get("nad_rows"), name=str(r.get("county")))
+        d1.append({"county": r.get("county"), **{k: v[k] for k in
+                   ("ok", "coverage_status", "verification", "rows", "declared",
+                    "completeness_delta", "completeness_ratio")},
+                   "warnings": v["warnings"]})
+    order = {"failed": 3, "empty_anomaly": 2, "empty_upstream_confirmed": 1, "ok": 0}
+    worst = max(d1, key=lambda x: order.get(x["coverage_status"], 3), default=None)
+    state_status = worst["coverage_status"] if worst else "empty_anomaly"
+    state_verification = ("verified" if d1 and all(x["verification"] == "verified" for x in d1)
+                          else "unverified")
+    for w in cov.get("warnings") or []:
+        log("⚠️ coverage: " + str(w))
     manifest = {
         "generated_at": now_utc(),
         "schema_version": "2.0",
@@ -1088,7 +1112,19 @@ def main(argv=None) -> int:
     (out_dir / "MANIFEST.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     (out_dir / "STATUS.json").write_text(json.dumps(
         {"generated_at": now_utc(), "state": scope["state"], "ok": ok,
-         "counties_done": [r["county"] for r in results],
+         "counties_done_list": [r["county"] for r in results],
+         "counties_expected": cov.get("counties_expected"),
+         "counties_done": cov.get("counties_done", len(results)),
+         "counties_declared": cov.get("counties_declared"),
+         "counties_with_any_rows": cov.get("counties_with_any_rows"),
+         "counties_with_nad_rows": cov.get("counties_with_nad_rows"),
+         "counties_nad_substantive": cov.get("counties_nad_substantive"),
+         "excluded_geom": cov.get("excluded_geom"),
+         "missing_geom": cov.get("missing_geom"),
+         "coverage_status": cov.get("coverage_status") or state_status,
+         "verification": cov.get("verification") or state_verification,
+         "coverage": cov,
+         "d1": d1,
          "conservation": {r["county"]: r["conservation"] for r in results}},
         ensure_ascii=False, indent=1), encoding="utf-8")
 

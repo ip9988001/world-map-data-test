@@ -1,0 +1,298 @@
+{
+ "schema": "county-geom-manifest/v1",
+ "purpose": "D2 第②道清洗的唯一几何来源；缺任一县 → fail（不许 skipped）",
+ "vintage": "TIGERweb State_County/Counties（2024 版县界，含 CT planning region 09110-09190 与 MD/VA 独立市）",
+ "source_url": "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1/query",
+ "source_doc": "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1",
+ "max_allowable_offset_deg": 0.001,
+ "coordinate_decimals": 5,
+ "fetched_at": "2026-11-21T22:00:26Z",
+ "county_count": 3144,
+ "counties_expected": 3144,
+ "missing": [],
+ "combined": {
+  "path": "config/baseline/counties_geom.json.gz",
+  "bytes": 1906251,
+  "sha256": "d1f104a6eff7bdd05523b391de53ffc60c32bee045bea81f0719a074c5434e39",
+  "body_sha256": "4a705eedb50551e5eaa5b64eb93282b8ba4d64b087499cc0a593510fb84a774b"
+ },
+ "source_audit": {
+  "yicang_release_assets": {
+   "repo": "ip9988001/World-US-Map-Data",
+   "note": "逐州 raw-US-<ST>-v1 里的 TIGER-US-<ST>-county-<FIPS5>.geojson；只读核查，未下载",
+   "states": 51,
+   "counties": 3138,
+   "missing_fips": [
+    "24510",
+    "29510",
+    "51600",
+    "51620",
+    "51760",
+    "51770"
+   ],
+   "verdict": "覆盖不全（3138/3144）→ 按派单改下全国县界小包"
+  },
+  "cb_500k_blocked": {
+   "url": "https://www2.census.gov/geo/tiger/GENZ2024/shp/cb_2024_us_county_500k.zip",
+   "verdict": "本环境 Cloudflare 403（curl/scrapling 均被拦），改用同一官方服务的等价小包 TIGERweb REST"
+  }
+ },
+ "per_state": {
+  "01": {
+   "counties": 67,
+   "bytes": 174930,
+   "geojson_sha256": "42cf2bec28e77710826442b3ff61dd9d3a9ed509a4c849774b9fa1cd3d5e7d70"
+  },
+  "02": {
+   "counties": 30,
+   "bytes": 283690,
+   "geojson_sha256": "87e28cd9d46e8bee8e7303214d5a47f3408a043b29967a9bdea0bdc2ed229c9b"
+  },
+  "04": {
+   "counties": 15,
+   "bytes": 90839,
+   "geojson_sha256": "255276fbfe660e72fd7b87d7038362d9237746e6e573790a4480b5893d54859a"
+  },
+  "05": {
+   "counties": 75,
+   "bytes": 198989,
+   "geojson_sha256": "978872dc2181601ba037f8f108a8246b243011f18699e0aca108b630355aca30"
+  },
+  "06": {
+   "counties": 58,
+   "bytes": 335038,
+   "geojson_sha256": "34c1d9be822364986c3ec4ebdc194f931bdc5a759617859938c206c4322854ab"
+  },
+  "08": {
+   "counties": 64,
+   "bytes": 169341,
+   "geojson_sha256": "47b5ad50c5d88840dab55beed5b091d03ed121eaa174f268b69bc288e327c7bc"
+  },
+  "09": {
+   "counties": 9,
+   "bytes": 17309,
+   "geojson_sha256": "3aa2d05c55f9613fdcbd132d284576c8bbf1428d4454e6fa930329dc952742a1"
+  },
+  "10": {
+   "counties": 3,
+   "bytes": 6461,
+   "geojson_sha256": "00a5325a14980182e3a93145a0d8b8f4186c427beebc531385c7f8d2f76d7682"
+  },
+  "11": {
+   "counties": 1,
+   "bytes": 856,
+   "geojson_sha256": "5a04f5e4ca7cbe433dd7b7fb6bdc7183d58e3c264d15646f27acbfb77474ce54"
+  },
+  "12": {
+   "counties": 67,
+   "bytes": 194581,
+   "geojson_sha256": "e0a6bfa67aab56dc64050ecb779bc85230c25cce1db0d327667b8b88bc07f174"
+  },
+  "13": {
+   "counties": 159,
+   "bytes": 403877,
+   "geojson_sha256": "9164e6eec071e2e2896559c7f99a90997e236c6327f9f2646eb10fb68d558447"
+  },
+  "15": {
+   "counties": 5,
+   "bytes": 26012,
+   "geojson_sha256": "32c280ef252bc28db2f51680ea164998a5b88526fbdb995337dcd95e340fd78f"
+  },
+  "16": {
+   "counties": 44,
+   "bytes": 206755,
+   "geojson_sha256": "c194499d7538c566cba1a3ed9f5e28aa37dd07fb9566384bcd1c16f124c02ecc"
+  },
+  "17": {
+   "counties": 102,
+   "bytes": 112700,
+   "geojson_sha256": "9f52d1d4092267477422283e6a9a2a895871f40fd06d09917c92c6815d3331f2"
+  },
+  "18": {
+   "counties": 92,
+   "bytes": 93423,
+   "geojson_sha256": "84580e01b8360aacf0c3c4d13d43c1de6149eb06aefde7133d6beeb7683557ff"
+  },
+  "19": {
+   "counties": 99,
+   "bytes": 57371,
+   "geojson_sha256": "20f3b95aa97de0c690b37dcdef6a06276f2f21e2e1bc2b27e4565322d733b845"
+  },
+  "20": {
+   "counties": 105,
+   "bytes": 48651,
+   "geojson_sha256": "b2bd2b80d03837648040adb5be4a06730d4bc226beb34d5fb5c8ba2c8c3f6916"
+  },
+  "21": {
+   "counties": 120,
+   "bytes": 388236,
+   "geojson_sha256": "24b4d76d773377024e6fdeea29bb9b3f88622d757d23fbbe63ee4e2b13d4a7e4"
+  },
+  "22": {
+   "counties": 64,
+   "bytes": 256208,
+   "geojson_sha256": "acd5f93050e220fa7eb3cedd894bf8cbd76d52d6370c61617f5fc8a380807788"
+  },
+  "23": {
+   "counties": 16,
+   "bytes": 69506,
+   "geojson_sha256": "688ab72b8ec455d2231cb4054b6dc6bfe3b91f340712490a7e3f8822a1f9e866"
+  },
+  "24": {
+   "counties": 24,
+   "bytes": 75254,
+   "geojson_sha256": "34e96c86bde61beed7c2dd2f0866cd8b0b7c6f629037279d0b17f52fef444ed2"
+  },
+  "25": {
+   "counties": 14,
+   "bytes": 36428,
+   "geojson_sha256": "429bab9a427af7f0572732a3bf27e7012aee114f3fdafe743dab15253866526f"
+  },
+  "26": {
+   "counties": 83,
+   "bytes": 50390,
+   "geojson_sha256": "a3be4de072dc10f0c813ec7378927fd10d957c38a83b85e87e067187eb3dd85d"
+  },
+  "27": {
+   "counties": 87,
+   "bytes": 138869,
+   "geojson_sha256": "c2adab55fc5be1c264b6dbc1ba51185e37346f2be28f2962b71d9d00c9c0c24e"
+  },
+  "28": {
+   "counties": 82,
+   "bytes": 144127,
+   "geojson_sha256": "416894ac50f7c66767729b5ebc9ab80be828490c3b519931a92501b248f18005"
+  },
+  "29": {
+   "counties": 115,
+   "bytes": 140628,
+   "geojson_sha256": "b61195f0bfdce02b616a685d1d5bd960a48474301bca7afc63fe1b6b15e8634c"
+  },
+  "30": {
+   "counties": 56,
+   "bytes": 266904,
+   "geojson_sha256": "1dfdfbf0239633fe2d55af90deb1bc078410e3d0bb9245a9bfd13a0b7e33364e"
+  },
+  "31": {
+   "counties": 93,
+   "bytes": 55140,
+   "geojson_sha256": "70b96e9f99bd90606dc0972f639cb2b94ee3e8b0a62d71b0ebb84f3e47941f73"
+  },
+  "32": {
+   "counties": 17,
+   "bytes": 36744,
+   "geojson_sha256": "08861efddb924b8f78e9a7ce70175d38c628ff62f46495a83dc106a2cb6d0a7d"
+  },
+  "33": {
+   "counties": 10,
+   "bytes": 28619,
+   "geojson_sha256": "1d7f4d3fef69fb81e75a30a25492832159b80f34b56f00e570d859d5a768be96"
+  },
+  "34": {
+   "counties": 21,
+   "bytes": 62893,
+   "geojson_sha256": "4894a0ddc6aa7e22e0984d96bd2a70130329d7bd6a31d1e0f7ed3f7d32094cd9"
+  },
+  "35": {
+   "counties": 33,
+   "bytes": 49922,
+   "geojson_sha256": "d72f1798b7a64cccd928b5f53a00602f2b22238ede2f4775414d2b53c4dc647c"
+  },
+  "36": {
+   "counties": 62,
+   "bytes": 117906,
+   "geojson_sha256": "9cadfb6fc2d71dbccb1a76c1352fa1ec0e0cd3885ab3fa7893c766f9d11890d8"
+  },
+  "37": {
+   "counties": 100,
+   "bytes": 279538,
+   "geojson_sha256": "b95d76b7f04bc33c98b39926b7645593c8fb9d7ddc6f94253e285885c3b571ac"
+  },
+  "38": {
+   "counties": 53,
+   "bytes": 89043,
+   "geojson_sha256": "5ad02182307a50f97cd91179d95c0607652a6988a33d32f0e4466b6278894069"
+  },
+  "39": {
+   "counties": 88,
+   "bytes": 56836,
+   "geojson_sha256": "5a3ef98c8e80b9ebbfb1befdbdb0cbf595636d81c8c67a74e8936c27caf5fa9e"
+  },
+  "40": {
+   "counties": 77,
+   "bytes": 108147,
+   "geojson_sha256": "e6cd7ec411cc54225f9e6c4c3eed17b4caf7475a8ca0fa13b5199505f739c5a3"
+  },
+  "41": {
+   "counties": 36,
+   "bytes": 140271,
+   "geojson_sha256": "538cee5d1b35392d2a70fe7b4658d34f7dfc75c19d6310d2b4304db9d2a53966"
+  },
+  "42": {
+   "counties": 67,
+   "bytes": 134926,
+   "geojson_sha256": "cb9bfde88c96eef4deca52910b1dd126033e610f34ba7526a5f727a26a6674fb"
+  },
+  "44": {
+   "counties": 5,
+   "bytes": 6925,
+   "geojson_sha256": "3278020aa9f449b5647e829e4124451bb2d78af599dd300d128f997ffafe2ee4"
+  },
+  "45": {
+   "counties": 46,
+   "bytes": 209709,
+   "geojson_sha256": "6aaf6a4bdc6b70f5be5ecf10cd07e5e5ab852e65a7d903b0130bab74e697566e"
+  },
+  "46": {
+   "counties": 66,
+   "bytes": 91710,
+   "geojson_sha256": "8afd4e72e46fd0cbe2db5f5a8030a3c7bf0a4489a5819aff0eefadedfbe6b42a"
+  },
+  "47": {
+   "counties": 95,
+   "bytes": 303039,
+   "geojson_sha256": "121c0f923b5487b808008322c3d242f364c494818f969da5ef9dd136263d5960"
+  },
+  "48": {
+   "counties": 254,
+   "bytes": 599033,
+   "geojson_sha256": "e2d196d914f0c42aecab50840dee565e5e4b683d10d8047f52fbd29cab75b2e4"
+  },
+  "49": {
+   "counties": 29,
+   "bytes": 126221,
+   "geojson_sha256": "0db6e0c42fa01bc26cec4ed71d5c8fda899859e40cccf18a550ce0a18899e3c0"
+  },
+  "50": {
+   "counties": 14,
+   "bytes": 26821,
+   "geojson_sha256": "9a1f3080a31f52f378eb34ebfb08a154022d2cf17dc88b2432f7375d522d1320"
+  },
+  "51": {
+   "counties": 133,
+   "bytes": 368658,
+   "geojson_sha256": "42cba54d1463edf9b4abbfa78cc3661542bb9d6afafbfc50f44ea3610a4da67b"
+  },
+  "53": {
+   "counties": 39,
+   "bytes": 133381,
+   "geojson_sha256": "5bdf56fcd302f3b3853a3888e0c2359687985dfc6cfba6b67ff740ba96a36014"
+  },
+  "54": {
+   "counties": 55,
+   "bytes": 187708,
+   "geojson_sha256": "0e754bd1325620632a426a1f164c8cb41c66fb01f0fc557d94501b3c13a837ad"
+  },
+  "55": {
+   "counties": 72,
+   "bytes": 65633,
+   "geojson_sha256": "b6e7b2eed91e80e2b66c5df9c766f584041ebc49b59a9400d8dece6f818cc49d"
+  },
+  "56": {
+   "counties": 23,
+   "bytes": 46841,
+   "geojson_sha256": "3e2116fb3f4ad170ec1fc989cc961952b2e944e0734aff49ac1ac7b2e56f0cd2"
+  }
+ },
+ "read_only": "运行期只读；口径变化只能重新生成并改 SCHEMA 引用"
+}

@@ -47,6 +47,7 @@
     "at": "2026-11-22",
     "rev4": "rev4 的 4 个新列（completeness_tier / confidence_level / backfilled_fields / missing_reason）当前恒为「不存在」——writer（scripts/gold_coalesce.py 的 process_county）尚未实现，全仓 *.py 对这 4 个名字 0 引用；在此之前任何 gold 行都没有这些 key，下游必须按 .get() 读取",
     "rev4_when": "Phase 1b/1c（写入层改造）完成并重跑后才有值；在 MANIFEST 声明 tiers_filled=true 之前，下游不得假定两轴列非空",
+    "coverage": "coverage 段的 6 个 counties_* 计数已由 scripts/coverage_counters.py 实现并接进 STATUS.json 写入点（gold_coalesce.main 落 STATUS.json）；历史产物里没有这些键，且带旧的 `empty` 单值 —— 只读不改、不回溯重算",
     "rings_ref": "恒为 null —— 本文件定义了该字段，但目前没有任何一条 gold 行带值（连 key 都还没写进产物）",
     "geom_bbox": "恒为 null（同上）",
     "why_not_filled": "三仓几何尚未落盘；且二仓 gold 的 writer（scripts/gold_coalesce.py 的 process_county，row 字典 :854-886）目前只写 32 个主字段 + 19 个 provenance —— rev2 的 4 个与 rev3 的 2 个字段一个都没实现（全仓 *.py 对 src_kind / rings_ref / geom_bbox 均 0 引用）",
@@ -141,7 +142,89 @@
     "confidence_level": ["L1", "L2", "L3"],
     "missing_reason": [null, "upstream_no_number", "upstream_no_zip", "upstream_no_city",
                        "no_zip_no_city", "street_only", "no_number_no_zip", "out_of_scope", "other"],
+    "coverage_status": ["ok", "empty_upstream_confirmed", "empty_anomaly", "failed"],
+    "verification": ["verified", "unverified"],
     "_enum_policy": "rev4 起：enums 只许追加取值，不许删除、不许改名（scripts/check_schema_rev.py 会断言）"
+  },
+  "coverage": {
+    "_note": "rev4 内追加段（additive-only，**不升 rev5**）：把「覆盖率算给谁看」这件事定死。本段只定口径与产物键名，不定义 writer 行为；实现见 scripts/coverage_counters.py",
+    "counties_expected": {
+      "path": "config/baseline/counties_census.json",
+      "schema": "counties-baseline/v1",
+      "vintage": "ACS 2020-2024 5-year（Census 表 B25001_001 Total housing units）+ TIGER2024 县清单",
+      "sha256": "0df524ad11fee6b634df15fd6999ba8849f52f267e1d0d11eef8874bea78eb25",
+      "sha256_scope": "只覆盖 counties 数组的规范化序列化（json.dumps sort_keys=True, separators=(',',':')，UTF-8），头部元数据不参与；`python3 scripts/build_counties_baseline.py --check` 可离线复算",
+      "county_count": 3144,
+      "row_count": 3222,
+      "territories_included": false,
+      "source_url": "https://api.censusreporter.org/1.0/data/show/acs2024_5yr?table_ids=B25001&geo_ids=050%7C01000US",
+      "denominator_rule": "**覆盖率唯一法定分母** = 本表按目标州 state_fips 过滤后的县行数；**禁止**用 counties_done / counties_declared 当分母（它们是「我们干了多少」的自述数，当分母永远算成 100%，等于自证）",
+      "deprecated_denominators": ["counties_done", "counties_declared"],
+      "why_a_fixed_table": "上游 NAD 缺县、资产缺失、addrfeat 缺失都会让 counties_done 变小；分母跟着变小，覆盖率就失去意义（NH 2026-11-21 事故：10 个地址层全 0 字节，自述口径仍报「完整」）",
+      "territories_policy": "领地（PR/VI/GU/AS/MP）不入表也不入分母：本轮作用域 = 50 州 + DC；将来若要覆盖领地，必须新增 vintage 文件并改本段引用，不许就地加行",
+      "read_only": "运行期只读；口径变化只能新增 vintage 文件 + 改本段引用，禁止原地改行改数"
+    },
+    "status_fields": {
+      "_note": "STATUS.json（naming.asset_status）必须**同时**出这几个数，键名逐字不许改名；历史产物缺这些键属正常（只读不改，不回溯重算）",
+      "keys": ["counties_expected", "counties_done", "counties_declared",
+               "counties_with_any_rows", "counties_with_nad_rows", "counties_nad_substantive"],
+      "_dispatch_note": "派单原文列了 7 个键，其中 counties_done 重复出现一次；去重后为 6 个唯一键名（本数组为唯一口径）",
+      "excluded_counters": ["excluded_state_mismatch", "excluded_geom", "missing_geom"],
+      "compat_change": "STATUS.json 旧版 `counties_done` 是「县 fips 数组」；新契约里它是「县数（int）」。为不丢信息，原数组改名落到 `counties_done_list`（新产物两份都出）。读旧 STATUS 的脚本必须自己兼容两种类型（旧产物只读不改）",
+      "definitions": {
+        "counties_expected": "基准表按目标州过滤后的县行数（唯一分母）",
+        "counties_done": "真正产出县级分片的县数（观测值，**不是分母**）",
+        "counties_declared": "scope 声明要做的县数（观测值，**不是分母**）",
+        "counties_with_any_rows": "融合后行数 > 0 的县数（过完州码匹配 + 县界校验之后）",
+        "counties_with_nad_rows": "NAD 源行数 > 0 的县数（过完两道清洗之后的可用 NAD 行）",
+        "counties_nad_substantive": "NAD 行数 ≥ max(10, ceil(0.01 × 该县分母)) 的县数，逐县判，口径见 coverage.counties_nad_substantive",
+        "excluded_state_mismatch": "行 state 与目标州不符被剔除的行数",
+        "excluded_geom": "点在县多边形外被剔除的行数（真射线法；缺几何不算在这里，记 missing_geom）",
+        "missing_geom": "缺县界几何的县数（>0 即 coverage_status=failed，**不是** skipped）"
+      }
+    },
+    "coverage_status": {
+      "field": "coverage_status",
+      "values": ["ok", "empty_upstream_confirmed", "empty_anomaly", "failed"],
+      "deprecated_values": ["empty"],
+      "migration": "旧的单值 `empty` 作废：它把「上游确实没这条数据」与「我们没抓到 / 抓坏了」混成一个字。历史产物（如 docs/PHASE0-NH-RELEASE-AUDIT.md 里的 {ok:3, empty:10}）**只读不改、不回溯重算**；新产物一律按四值出，`empty` 不许再产出（check_schema_rev.py 断言 deprecated_values 声明在位）",
+      "how_computed": "见 docs/D1-D2-ACCEPTANCE-CRITERIA.md D1 段：ok = rows>0 且守恒通过 且 完整率 |raw_fetched-declared|/declared ≤ 0.005；rows=0 且 declared=0 → empty_upstream_confirmed（有上游证据）/ empty_anomaly（无证据或与上游矛盾）；declared>0 且 rows=0 → failed；完整率越界 → failed",
+      "granularity": "按层（layer）/按县（county）分别出；州级 STATUS 里给聚合（任一县非 ok 则州级不得写 ok，只可写该县的状态码或 down 到最差档）"
+    },
+    "verification": {
+      "field": "verification",
+      "values": ["verified", "unverified"],
+      "note": "**warn 级标记，不是 coverage_status 的第五个值**（不许塞进 coverage_status 枚举）。`unverified` = declared 缺失或 =0 但 rows>0，行数没法对账 → 必须同时产出一条点名县/州的 warn，不许静默当 100% 完整",
+      "default_when_unknown": "unverified（缺省从严；不许缺省 verified）"
+    },
+    "completeness_tolerance": {
+      "ratio": 0.005,
+      "formula": "|raw_fetched - declared| / declared ≤ 0.005（declared = 0 时不适用，走 verification=unverified 分支）",
+      "delta_must_be_recorded_in": ["STATUS.json 的逐县/逐层条目（raw_fetched, declared, completeness_delta, completeness_ratio）"],
+      "why_0_5pct": "上游 declared 本身是分片记账值，允许 0.5% 的记账误差；超过就说明「拿到的」与「上游说有的」不是同一批数据，不能当同一批发布"
+    },
+    "counting_cleaning_order": {
+      "rule": "计数前两道清洗，**顺序不许颠倒**：①按州码剔除溢出（行 state 与目标州不符 → 剔除并记 excluded_state_mismatch）②按县界做空间校验（点落在县多边形内才算该县）",
+      "why_order": "先剔州再判县：溢出包（MA/VT/ME 的行混进 NH）不先剔掉，就会拿别的州的点去问 NH 的县多边形，既慢又会把边界噪声算成 NH 的行（counties_with_any_rows 虚增）"
+    },
+    "county_boundary_check": {
+      "interface": "county_boundary_check(rows, county_geom) -> {status, checked, kept, rejected, kept_rows}",
+      "geometry_source": "config/baseline/counties_geom.json.gz（全国县界小包，TIGERweb State_County/Counties 图层 + 服务端 maxAllowableOffset=0.001 化简，5 位小数）；manifest = config/baseline/county_geom_manifest.json；生成器 = scripts/fetch_county_geom.py",
+      "geometry_vintage": "TIGERweb State_County/Counties（2024 版县界，含 CT planning region 09110-09190 与 MD/VA 独立市）",
+      "geometry_coverage": "3,144/3,144 县（含 CT 09110-09190 planning region 与 MD/VA 独立市）；missing=0",
+      "geometry_sha256": "d1f104a6eff7bdd05523b391de53ffc60c32bee045bea81f0719a074c5434e39",
+      "geometry_sha256_scope": "counties_geom.json.gz 整个文件（gzip 头 mtime=0，可复算）；表体指纹另见 manifest.combined.body_sha256",
+      "missing_geometry_policy": "**fail**：status = `missing_geometry`（该县行不计数、记 missing_geom、整轮 coverage_status=failed + verification=unverified）。**禁止**返回 `skipped` 静默放过（muse-000153 明令：实现真校验，不许写 skipped）",
+      "source_selection": "先查一仓 raw-US-<ST>-v1 的 TIGER-US-<ST>-county-<FIPS5>.geojson → 实测 51 州 / 3,138 县，缺 6 个独立市（24510/29510/51600/51620/51760/51770）→ 覆盖不全，改取全国县界小包；cb_2024_us_county_500k.zip 本环境被 Cloudflare 403，故用同一官方服务的等价小包",
+      "no_bbox_substitute": "bbox 只许做预筛，不许当结论（沿用 county_index.py 口径）",
+      "no_big_geometry_download": "只下县界（本包 1.9 MB gzip）；严禁下全量 TIGER/线层几何"
+    },
+    "counties_nad_substantive": {
+      "rule": "县内 NAD 行数 ≥ max(10, ceil(0.01 × 分母)) 才算 substantive",
+      "denominator_priority": "优先用该县**总融合行数**；该县融合行数为 0 时退回该县 housing_units（基准表列）",
+      "ties": "denominator 两种都缺 → 既不计数也不当通过，记 warn 并落 null",
+      "why": "10 行是绝对下限（防止 1 行也算「有 NAD 背书」）；1% 是相对下限（大县 500 行占 30 万行 0.17%，说明 NAD 只覆盖了一个角，不能让整县挂 NAD 背书）"
+    }
   },
   "grade_rules": {
     "status": "SUPERSEDED-BY-tiers（rev4）：旧三档只约束「源票数」，不描述「这行有多完整」。旧产物、旧报表里出现的 S/A/B-Tier 继续按本段原义理解；新产物必须同时写 completeness_tier 与 confidence_level，不得再用三档代表整体质量",
