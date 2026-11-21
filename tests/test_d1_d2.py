@@ -17,10 +17,13 @@ D1 五条
 D2 四条 + 一条真几何
   D2-① 10 县 done、只有 3 县有 NAD 行        → counties_with_nad_rows=3（分母仍=基准表）
   D2-② 某县 9 行 NAD                         → 不进 counties_nad_substantive（<10）
-  D2-③ 同县 500 行但阈值 600                 → 也不进；补 600 行 → 进（阈值可复算）
+  D2-③ 同县 500 行但阈值 1,778                → 也不进；补 1,800 行 → 进（阈值只由 housing_units 算）
   D2-④ 溢出包全 MA/VT/ME 的行喂给 NH          → 全落 excluded_state_mismatch，any_rows 不虚增
   D2-⑤ 全国县界小包（仓内 3,144 县 gz）+ DE Kent 原始 Esri 样本
                                               → 县内点留 / 县外点剔 / state_fips 不符剔除 / 缺几何 fail（不是 skip）
+  D2-⑥ 同一县融合行数极少（3）但 housing_units 正常 + 融合行数爆到 6 万
+                                              → 两种情况下阈值都只由 housing_units 定（防回归，muse-000156）
+                                              附：基准表无 housing_units 的县 → 不计数 + warn，也不当通过
 """
 from __future__ import annotations
 
@@ -111,27 +114,29 @@ def main() -> int:
                   and c1["coverage_status"] == "ok" and c1["verification"] == "verified")
 
     c2 = CC.coverage_counters("NH", [rec("33011", "nad") for _ in range(9)], baseline=BASE)
+    hu_33011 = CC.housing_units_of(BASE, "33011")           # = 177,734
     detail["D2-②"] = {"nad": c2["per_county"]["33011"]["nad"],
                       "substantive": c2["counties_nad_substantive"],
-                      "thr": CC.nad_substantive_threshold(9, CC.housing_units_of(BASE, "33011"))}
+                      "hu": hu_33011, "thr": CC.nad_substantive_threshold(hu_33011),
+                      "abs_min_thr": CC.nad_substantive_threshold(500)}
     ok["D2-②"] = (c2["per_county"]["33011"]["nad"] == 9
                   and c2["counties_nad_substantive"] == 0
-                  and detail["D2-②"]["thr"] == 10)
+                  and detail["D2-②"]["thr"] == 1778
+                  and detail["D2-②"]["abs_min_thr"] == 10)      # 1%×500=5 → 抬到绝对下限 10
 
     big = ([rec("33011", "nad") for _ in range(500)]
            + [rec("33011", "oa") for _ in range(59_500)])
     c3 = CC.coverage_counters("NH", big, baseline=BASE)
-    thr3 = CC.nad_substantive_threshold(c3["per_county"]["33011"]["any"],
-                                       CC.housing_units_of(BASE, "33011"))
-    # 补到 600 行 NAD（总融合行数仍 60,000 —— 多出的行会抬高阈值，所以要等量换掉 OA）
-    big2 = ([rec("33011", "nad") for _ in range(600)]
-            + [rec("33011", "oa") for _ in range(59_400)])
+    thr3 = CC.nad_substantive_threshold(CC.housing_units_of(BASE, "33011"))
+    # 融合行数 6 万在旧口径下会把阈值抬到 600；新口径阈值恒 = ceil(1% × housing_units) = 1,778
+    big2 = ([rec("33011", "nad") for _ in range(1800)]
+            + [rec("33011", "oa") for _ in range(58_200)])
     c3b = CC.coverage_counters("NH", big2, baseline=BASE)
     detail["D2-③"] = {"fused": c3["per_county"]["33011"]["any"],
                       "nad": c3["per_county"]["33011"]["nad"], "thr": thr3,
                       "substantive_500": c3["counties_nad_substantive"],
-                      "substantive_600": c3b["counties_nad_substantive"]}
-    ok["D2-③"] = (thr3 == 600 and c3["counties_nad_substantive"] == 0
+                      "substantive_1800": c3b["counties_nad_substantive"]}
+    ok["D2-③"] = (thr3 == 1778 and thr3 != 600 and c3["counties_nad_substantive"] == 0
                   and c3b["counties_nad_substantive"] == 1)
 
     nh_pt = inside_pt("33011")
@@ -172,6 +177,53 @@ def main() -> int:
                   and miss["missing_geom"] == 1 and miss["coverage_status"] == "failed"
                   and miss["verification"] == "unverified"
                   and c5s["excluded_state_mismatch"] == 1 and c5s["counties_with_any_rows"] == 0)
+
+    # D2-⑥ 防回归（muse-000155/000156）：分母只认 housing_units，融合行数只作被除数
+    # 判别力：600 行 NAD + 融合 603 行（旧口径 thr=max(10,ceil(1%×603))=10 → 会判进）
+    #         600 行 NAD + 融合 60,000 行（旧口径 thr=600 → 会判进）
+    #         新口径两者 thr 恒 = ceil(1%×177,734) = 1,778 → 都不进
+    few = [rec("33011", "nad") for _ in range(600)] + [rec("33011", "oa") for _ in range(3)]
+    c6a = CC.coverage_counters("NH", few, baseline=BASE)
+    many = ([rec("33011", "nad") for _ in range(600)]
+            + [rec("33011", "oa") for _ in range(59_400)])
+    c6b = CC.coverage_counters("NH", many, baseline=BASE)
+    # 同一县融合行数仍只 3 行，NAD 补到 1,800 → 超过 1,778 才进（证明阈值可达成、且不由融合行数推）
+    enough = [rec("33011", "nad") for _ in range(1800)] + [rec("33011", "oa") for _ in range(3)]
+    c6d = CC.coverage_counters("NH", enough, baseline=BASE)
+    # 基准表里该县无 housing_units（分母缺失）→ 不计数也不当通过，且 warn 文案只说 housing_units
+    no_hu_base = dict(BASE)
+    no_hu_base["counties"] = [dict(c, housing_units=0) if c.get("county_fips") == "33011" else c
+                              for c in BASE.get("counties") or []]
+    c6c = CC.coverage_counters("NH", [rec("33011", "nad") for _ in range(5000)], baseline=no_hu_base)
+    warn_txt = [w for w in c6c["warnings"] if "housing_units" in w]
+    # 结构护栏：函数不再接收融合行数（传第二个位置参直接 TypeError，留着旧口径调用必炸）
+    two_arg_rejected = False
+    try:
+        CC.nad_substantive_threshold(177_734, 60_000)      # type: ignore[call-arg]
+    except TypeError:
+        two_arg_rejected = True
+    detail["D2-⑥"] = {"fused_603": c6a["per_county"]["33011"]["any"],
+                       "substantive_603": c6a["counties_nad_substantive"],
+                       "fused_60k": c6b["per_county"]["33011"]["any"],
+                       "substantive_60k": c6b["counties_nad_substantive"],
+                       "fused_1803_substantive": c6d["counties_nad_substantive"],
+                       "thr_by_hu": CC.nad_substantive_threshold(hu_33011),
+                       "thr_old_603": 10, "thr_old_60k": 600,
+                       "thr_no_hu": CC.nad_substantive_threshold(0),
+                       "two_arg_rejected": two_arg_rejected,
+                       "no_hu_substantive": c6c["counties_nad_substantive"],
+                       "no_hu_warn": warn_txt[:1]}
+    ok["D2-⑥"] = (c6a["per_county"]["33011"]["any"] == 603
+                  and c6b["per_county"]["33011"]["any"] == 60_000
+                  and c6a["counties_nad_substantive"] == 0      # 旧口径会判 1
+                  and c6b["counties_nad_substantive"] == 0      # 旧口径会判 1
+                  and c6d["counties_nad_substantive"] == 1      # 1,800 ≥ 1,778
+                  and CC.nad_substantive_threshold(hu_33011) == 1778
+                  and CC.nad_substantive_threshold(0) is None
+                  and CC.nad_substantive_threshold(None) is None
+                  and two_arg_rejected
+                  and c6c["counties_nad_substantive"] == 0
+                  and len(warn_txt) == 1 and "融合行数" not in warn_txt[0])
 
     for k in sorted(ok):
         print("%s: %s  %s" % (k, "✅" if ok[k] else "❌", detail.get(k, "")))

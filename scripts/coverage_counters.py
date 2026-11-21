@@ -11,7 +11,8 @@
   D2  county_boundary_check()  → 点在县多边形内才算该县（**真射线法**；缺几何 = missing_geometry → fail，
                                  明文禁止返回 skipped 静默放过 —— muse-000153 定：实现真校验，不许写 skipped）
       coverage_counters(...)   → 6 个 counties_* 计数 + 两道清洗的剔除数（excluded_geom / missing_geom）
-  D2  nad_substantive_threshold(fused_rows, housing_units) → max(10, ceil(1% × 分母))
+  D2  nad_substantive_threshold(housing_units) → max(10, ceil(1% × housing_units))
+                                  （substantive 阈值的分母**只认 housing_units**；融合行数只作被除数）
 
 分母唯一 = config/baseline/counties_census.json 的 county_count（按州过滤）。
 counties_done / counties_declared 只作观测，绝不当分母。
@@ -31,7 +32,7 @@ COVERAGE_STATUS = ("ok", "empty_upstream_confirmed", "empty_anomaly", "failed")
 VERIFICATION = ("verified", "unverified")
 TOLERANCE = 0.005            # 完整率公差：|raw_fetched - declared| / declared ≤ 0.5%
 SUBSTANTIVE_ABS_MIN = 10     # counties_nad_substantive 的绝对下限
-SUBSTANTIVE_RATIO = 0.01     # 相对下限：1% × 该县分母
+SUBSTANTIVE_RATIO = 0.01     # 相对下限：1% × 该县 housing_units（分母只认 housing_units）
 
 
 # ------------------------------------------------------------------ 基准表
@@ -200,12 +201,16 @@ def county_boundary_check(rows: list[dict], county_geom: list | None) -> dict:
             "sample_rejected": rejected[:3]}
 
 
-def nad_substantive_threshold(fused_rows: int | None, housing_units: int | None) -> int | None:
-    """max(10, ceil(1% × 分母))；分母优先该县总融合行数，为 0 时退回 housing_units。"""
-    denom = fused_rows if (fused_rows or 0) > 0 else (housing_units if (housing_units or 0) > 0 else None)
-    if denom is None:
+def nad_substantive_threshold(housing_units: int | None) -> int | None:
+    """max(10, ceil(1% × housing_units))；分母**固定为 housing_units**（muse-000155 / 000156 裁定）。
+
+    该县融合行数（fused_rows / output_rows）只作被除数参与 `nad_rows >= 阈值` 的判定，
+    **绝不当分母**（001153 里「优先总融合行数、为 0 退回 housing_units」已作废）。
+    housing_units 缺失或 ≤ 0 → 返回 None：该县不进分母、也不当通过。
+    """
+    if (housing_units or 0) <= 0:
         return None
-    return max(SUBSTANTIVE_ABS_MIN, math.ceil(SUBSTANTIVE_RATIO * denom))
+    return max(SUBSTANTIVE_ABS_MIN, math.ceil(SUBSTANTIVE_RATIO * housing_units))
 
 
 def coverage_counters(state_abbr: str, records, *, baseline: dict | None = None,
@@ -262,14 +267,14 @@ def coverage_counters(state_abbr: str, records, *, baseline: dict | None = None,
     for fips, v in per.items():
         if v["nad"] <= 0:
             continue
-        thr = nad_substantive_threshold(v["any"], housing_units_of(base, fips))
+        thr = nad_substantive_threshold(housing_units_of(base, fips))
         if thr is None:
             no_denom.append(fips)
             continue
         if v["nad"] >= thr:
             substantive += 1
     if no_denom:
-        warns.append("这些县分母两种都缺（融合行数 0 且无 housing_units），不计数也不当通过：%s" % sorted(no_denom))
+        warns.append("这些县基准表里没有可用 housing_units（分母缺失），不计数也不当通过：%s" % sorted(no_denom))
 
     if counties_declared is not None and len(counties_declared) > len(exp):
         warns.append("counties_declared=%d 大于 counties_expected=%d（申明多做县或基准表过期）"
@@ -305,7 +310,7 @@ def counters_from_funnels(state_abbr: str, funnels, *, baseline: dict | None = N
     """给 gold_coalesce 用：从逐县 funnel 直接算 6 个数（不重扫行）。
 
     funnel 里 `nad_input - nad_malformed - nad_out_of_bounds` = 该县可用 NAD 行数；
-    `output_rows` = 该县融合行数（＝ substantive 阈值的第一优先分母）。
+    `output_rows` = 该县融合行数（**只作被除数，不参与分母**；substantive 阈值分母只认 housing_units）。
     `missing_geom`：**缺县界几何的县 fips 列表**（调用方传；非空 → coverage_status=failed）。
     """
     try:
@@ -324,7 +329,7 @@ def counters_from_funnels(state_abbr: str, funnels, *, baseline: dict | None = N
     for f in funnels:
         fips = str(f.get("county") or "")
         nad_usable = (f.get("nad_input") or 0) - (f.get("nad_malformed") or 0) - (f.get("nad_out_of_bounds") or 0)
-        thr = nad_substantive_threshold(f.get("output_rows"), hu.get(fips))
+        thr = nad_substantive_threshold(hu.get(fips))
         if nad_usable <= 0 or thr is None:
             continue
         if nad_usable >= thr:
