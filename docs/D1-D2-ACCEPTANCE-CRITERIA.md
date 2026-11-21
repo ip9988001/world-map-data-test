@@ -81,20 +81,36 @@ ok = rows > 0
 先剔州再判县：溢出包（MA/VT/ME 的行混进 NH）不先剔掉，就会拿别州的点去问 NH 的县多边形，
 既慢又会把边界噪声算成 NH 的行（`counties_with_any_rows` 虚增）。
 
-### 县界几何从哪来
+### 县界几何从哪来（muse-000153：实现真校验，不许写 skipped）
 
-- 上游 raw 的 `tiger/TIGER-US-<ST>-county-<FIPS5>.geojson`（TIGERweb Esri JSON，只认 `geometry.rings`）。
-- 仓内真几何样本：`data/dover/task001/tiger_boundary_kent_10' AND COUNTY.json`（DE Kent 10001），
-  自测用它证明 `checked` 分支真的在工作（县内点留、县外点剔）。
-- 缺几何 → `county_boundary_check` 返回 `skipped:no_geometry` 并 warn：
-  **不许把「没几何」当通过**，也不许为凑校验去下载大几何包。
+**唯一几何来源：仓内全国县界小包** `config/baseline/counties_geom.json.gz`
+（`{fips: [rings]}`，3,144 县全覆盖，5 位小数，gzip 头 mtime=0 → 可复算）
++ `config/baseline/county_geom_manifest.json`（vintage / source_url / sha256 / bytes / per-state 审计）。
+生成器 `scripts/fetch_county_geom.py`（`--check` 可离线复算）。
+
+选源过程（判据 = 全 3,144 县都有几何）：
+
+| 次序 | 来源 | 实测 | 结论 |
+|---|---|---|---|
+| ① 一仓资产 | `World-US-Map-Data` 各 `raw-US-<ST>-v1` 里的 `TIGER-US-<ST>-county-<FIPS5>.geojson` | **51 州 / 3,138 县**，缺 6 个独立市：`24510` `29510` `51600` `51620` `51760` `51770` | 覆盖不全 → 不可单独用 |
+| ② 全国小包 | `cb_2024_us_county_500k.zip`（www2.census.gov） | 本环境 **Cloudflare 403**（curl 全套浏览器头 + scrapling 都被拦） | 拿不到 |
+| ③ 全国小包替代 | **TIGERweb** `State_County/MapServer/1`（Counties 图层，官方，`maxAllowableOffset=0.001` 服务端化简） | **51 州 / 3,144 县**，含 CT 09110-09190、MD/VA 独立市，与基准表逐 fips 对齐 | **采用** |
+
+- `source_url`: `https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1/query`
+- `geometry_sha256`: `d1f104a6eff7bdd05523b391de53ffc60c32bee045bea81f0719a074c5434e39`（整个 gz 文件；表体指纹见 manifest `combined.body_sha256`）
+- `county_count`: **3144**，`missing`: **0**
+- 缺几何 → `county_boundary_check` 返回 `missing_geometry`：该县行不计数、记 `missing_geom`、
+  整轮 `coverage_status=failed` + `verification=unverified`。**禁止**返回 `skipped` 静默放过，
+  也不许为凑校验去下载全量 TIGER/线层几何（本包仅 1.9 MB）。
+- 自测里还保留仓内原始 Esri 样本 `data/dover/task001/tiger_boundary_kent_10' AND COUNTY.json`，
+  用来证明 `rings_from_esri_json()`（Esri `geometry.rings` → rings）这条路也对。
 
 ### 6 个必须同时出的计数（键名逐字）
 
 `counties_expected` / `counties_done` / `counties_declared` /
 `counties_with_any_rows` / `counties_with_nad_rows` / `counties_nad_substantive`
 
-配套剔除计数：`excluded_state_mismatch` / `excluded_out_of_county_geometry`。
+配套计数：`excluded_state_mismatch` / `excluded_geom`（县外点）/ `missing_geom`（缺几何的县数，>0 即 failed）。
 （派单原文列了 7 个名字，其中 `counties_done` 重复一次；去重口径见 SCHEMA `coverage.status_fields._dispatch_note`。）
 
 ### `counties_nad_substantive` 判定
@@ -116,4 +132,4 @@ ok = rows > 0
 | ② | 某县 NAD 9 行 | 不进 `counties_nad_substantive`（阈值 10） |
 | ③ | 同县 500 行、阈值 600 | 不进；补到 600 行（总融合行数不变）→ 进 |
 | ④ | 溢出包全 MA/VT/ME 的行喂给 NH | 全部落 `excluded_state_mismatch`，`counties_with_any_rows` 不得虚增 |
-| ⑤ | 仓内真几何（DE Kent） | 县内点留、县外点剔、`excluded_out_of_county_geometry=1`；无几何 → `skipped:no_geometry` |
+| ⑤ | 真几何四类断言 | 县内点留 / 县外点剔（`excluded_geom=1`）/ `state_abbr` 不符先剔（`excluded_state_mismatch=1`，`counties_with_any_rows` 不虚增）/ 缺几何 → `missing_geometry` + `coverage_status=failed` + `verification=unverified`（**不是 skipped**） |

@@ -1057,9 +1057,9 @@ def main(argv=None) -> int:
 
     # ---- D2 覆盖率计数（分母 = 基准县表 counties_expected；counties_done/declared 只作观测）
     declared_fips = [c["fips"] for c in scope.get("counties") or []]
-    geoms_ok = all(bool(c.get("rings")) for c in counties) if counties else False
+    missing_geom = [c["fips"] for c in counties if not c.get("rings")]
     cov = CC.counters_from_funnels(scope["state"], results, counties_declared=declared_fips,
-                                   geoms_available=geoms_ok)
+                                   missing_geom=missing_geom)
     # ---- D1 逐县 NAD 采集判定（上游声明行数 vs 实际拿到行数）
     d1 = []
     for r in results:
@@ -1119,8 +1119,10 @@ def main(argv=None) -> int:
          "counties_with_any_rows": cov.get("counties_with_any_rows"),
          "counties_with_nad_rows": cov.get("counties_with_nad_rows"),
          "counties_nad_substantive": cov.get("counties_nad_substantive"),
-         "coverage_status": state_status,
-         "verification": state_verification,
+         "excluded_geom": cov.get("excluded_geom"),
+         "missing_geom": cov.get("missing_geom"),
+         "coverage_status": cov.get("coverage_status") or state_status,
+         "verification": cov.get("verification") or state_verification,
          "coverage": cov,
          "d1": d1,
          "conservation": {r["county"]: r["conservation"] for r in results}},

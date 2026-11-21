@@ -8,8 +8,9 @@
 
 三件事：
   D1  d1_verdict(...)          → {ok, coverage_status, verification, completeness_*, warnings}
-  D2  county_boundary_check()  → 点在县多边形内才算该县（缺几何 = skipped:no_geometry + warn，不当通过）
-      coverage_counters(...)   → 6 个 counties_* 计数 + 两道清洗的剔除数
+  D2  county_boundary_check()  → 点在县多边形内才算该县（**真射线法**；缺几何 = missing_geometry → fail，
+                                 明文禁止返回 skipped 静默放过 —— muse-000153 定：实现真校验，不许写 skipped）
+      coverage_counters(...)   → 6 个 counties_* 计数 + 两道清洗的剔除数（excluded_geom / missing_geom）
   D2  nad_substantive_threshold(fused_rows, housing_units) → max(10, ceil(1% × 分母))
 
 分母唯一 = config/baseline/counties_census.json 的 county_count（按州过滤）。
@@ -23,6 +24,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 BASELINE_PATH = REPO / "config" / "baseline" / "counties_census.json"
+GEOM_PATH = REPO / "config" / "baseline" / "counties_geom.json.gz"
+GEOM_MANIFEST = REPO / "config" / "baseline" / "county_geom_manifest.json"
 
 COVERAGE_STATUS = ("ok", "empty_upstream_confirmed", "empty_anomaly", "failed")
 VERIFICATION = ("verified", "unverified")
@@ -39,6 +42,28 @@ def load_baseline(path: Path | str | None = None) -> dict:
     if not doc.get("counties"):
         raise SystemExit("基准县表为空：%s" % p)
     return doc
+
+
+def load_county_geoms(path: Path | str | None = None, manifest: Path | str | None = None) -> dict:
+    """读全国县界小包（config/baseline/counties_geom.json.gz）→ {fips: [rings]}。
+
+    这份包是 D2 第②道清洗的唯一几何来源：3,144 县全在（含 CT 09110-09190、MD/VA 独立市）。
+    缺失/损坏 → 抛错（调用方必须 fail，不许降级成「跳过校验」）。
+    """
+    gz = Path(path) if path else GEOM_PATH
+    man_p = Path(manifest) if manifest else GEOM_MANIFEST
+    if not gz.exists():
+        raise SystemExit("县界几何包缺失：%s（跑 scripts/fetch_county_geom.py 生成）" % gz)
+    import gzip as _gzip
+    with _gzip.open(gz, "rt", encoding="utf-8") as fh:
+        geoms = json.load(fh)
+    if not geoms:
+        raise SystemExit("县界几何包为空：%s" % gz)
+    if man_p.exists():
+        man = json.loads(man_p.read_text(encoding="utf-8"))
+        if man.get("missing"):
+            raise SystemExit("几何包 manifest 自述缺县：%s" % man["missing"][:10])
+    return geoms
 
 
 def expected_counties(baseline: dict, state_abbr: str) -> list[dict]:
@@ -151,24 +176,27 @@ def rings_from_esri_json(path: Path | str) -> list:
 
 
 def county_boundary_check(rows: list[dict], county_geom: list | None) -> dict:
-    """D2 第②道清洗：点落在县多边形内才算该县。
+    """D2 第②道清洗：点落在县多边形内才算该县（射线法，bbox 只许做预筛）。
 
-    county_geom 为 None / 空 → status=`skipped:no_geometry`（**不许**当通过，也不许为此下载大几何包）。
-    返回 {status, checked, kept, rejected, skipped_rows, sample_rejected}
+    county_geom 为 None / 空 → status=`missing_geometry`：**fail，不许当通过**（muse-000153）。
+    返回 {status, checked, kept, rejected, missing_rows, kept_rows, sample_rejected}
     """
     if not county_geom:
-        return {"status": "skipped:no_geometry", "checked": 0, "kept": len(rows),
-                "rejected": 0, "skipped_rows": len(rows), "kept_rows": list(rows),
-                "sample_rejected": []}
+        # muse-000153：实现真校验，不许写 skipped 静默放过；缺几何 = 明确 fail
+        return {"status": "missing_geometry", "checked": 0, "kept": 0,
+                "rejected": len(rows), "missing_rows": len(rows), "kept_rows": [],
+                "sample_rejected": [], "detail": "该县无几何 → 该县判 failed（不许当通过）"}
     kept, rejected = [], []
+    memo: dict = {}                       # 同一坐标只算一次（批量喂同点的自测/回填场景提速）
     for r in rows:
         lat, lon = r.get("lat"), r.get("lon")
-        if lat is None or lon is None or not point_in_rings(lon, lat, county_geom):
-            rejected.append(r)
-        else:
-            kept.append(r)
+        key = (lat, lon)
+        if key not in memo:
+            memo[key] = (lat is not None and lon is not None
+                         and point_in_rings(lon, lat, county_geom))
+        (kept if memo[key] else rejected).append(r)
     return {"status": "checked", "checked": len(rows), "kept": len(kept),
-            "rejected": len(rejected), "skipped_rows": 0, "kept_rows": kept,
+            "rejected": len(rejected), "missing_rows": 0, "kept_rows": kept,
             "sample_rejected": rejected[:3]}
 
 
@@ -183,12 +211,16 @@ def nad_substantive_threshold(fused_rows: int | None, housing_units: int | None)
 def coverage_counters(state_abbr: str, records, *, baseline: dict | None = None,
                       counties_done=None, counties_declared=None,
                       county_geoms: dict | None = None) -> dict:
-    """算 6 个 counties_* 计数（唯一分母 = 基准表）。
+    """算 6 个 counties_* 计数（唯一分母 = 基准表）+ 两道清洗的剔除数。
 
     records  可迭代 [{county_fips, state_abbr, lat, lon, source}]，source ∈ nad/oa/ovt/tiger
-    county_geoms  {fips: rings}；None = 没有几何 → 第②道清洗 skipped:no_geometry + warn
+    county_geoms  {fips: rings}；None = 用仓内全国县界小包（config/baseline/counties_geom.json.gz）。
+
+    缺几何 = **fail**（muse-000153：实现真校验，不许写 skipped）：该县行不计数、
+    记 `missing_geom`，整体 `coverage_status=failed` + `verification=unverified`。
     """
     base = baseline or load_baseline()
+    geoms = county_geoms if county_geoms is not None else load_county_geoms()
     target = (state_abbr or "").upper()
     exp = expected_counties(base, target)
     warns: list[str] = []
@@ -198,6 +230,8 @@ def coverage_counters(state_abbr: str, records, *, baseline: dict | None = None,
     per: dict[str, dict] = {}
     excluded_state = 0
     excluded_geom = 0
+    missing_geom_rows = 0
+    missing_geom_counties: list[str] = []
     boundary_statuses: set[str] = set()
     grouped: dict[str, list] = {}
 
@@ -209,25 +243,19 @@ def coverage_counters(state_abbr: str, records, *, baseline: dict | None = None,
         grouped.setdefault(str(r.get("county_fips") or ""), []).append(r)
 
     for fips, grp in grouped.items():
-        if county_geoms is None:                  # ② 县界空间校验（可插拔：缺几何 = skipped，不当通过）
-            boundary_statuses.add("skipped:no_geometry")
-            kept = grp
-        else:
-            chk = county_boundary_check(grp, county_geoms.get(fips))
-            boundary_statuses.add(chk["status"])
-            if chk["status"] == "checked":
-                kept = chk["kept_rows"]
-                excluded_geom += chk["rejected"]
-            else:
-                kept = grp
+        chk = county_boundary_check(grp, geoms.get(fips))   # ② 县界空间校验（真射线法）
+        boundary_statuses.add(chk["status"])
+        if chk["status"] == "checked":
+            kept = chk["kept_rows"]
+            excluded_geom += chk["rejected"]
+        else:                                     # 缺几何：fail-closed，行不计数
+            kept = []
+            missing_geom_rows += len(grp)
+            missing_geom_counties.append(fips)
+            warns.append("县 %s 缺几何：第②道清洗 fail（missing_geometry，未计入任何计数）" % fips)
         d = per.setdefault(fips, {"any": 0, "nad": 0})
         d["any"] += len(kept)
         d["nad"] += sum(1 for r in kept if (r.get("source") or "").lower() == "nad")
-
-    if county_geoms is None:
-        warns.append("无县界几何：第②道清洗状态=skipped:no_geometry（未做空间校验，不是通过）")
-    elif "skipped:no_geometry" in boundary_statuses:
-        warns.append("部分县无县界几何：这些县第②道清洗 skipped:no_geometry")
 
     with_nad = sum(1 for v in per.values() if v["nad"] > 0)
     substantive, no_denom = 0, []
@@ -247,6 +275,7 @@ def coverage_counters(state_abbr: str, records, *, baseline: dict | None = None,
         warns.append("counties_declared=%d 大于 counties_expected=%d（申明多做县或基准表过期）"
                      % (len(counties_declared), len(exp)))
 
+    failed = bool(missing_geom_counties)
     return {
         "counties_expected": len(exp),
         "counties_done": len(counties_done or []),
@@ -255,8 +284,15 @@ def coverage_counters(state_abbr: str, records, *, baseline: dict | None = None,
         "counties_with_nad_rows": with_nad,
         "counties_nad_substantive": substantive,
         "excluded_state_mismatch": excluded_state,
+        "excluded_geom": excluded_geom,
         "excluded_out_of_county_geometry": excluded_geom,
-        "boundary_check": sorted(boundary_statuses) or ["skipped:no_geometry"],
+        "missing_geom": len(missing_geom_counties),
+        "missing_geom_rows": missing_geom_rows,
+        "missing_geom_counties": sorted(missing_geom_counties)[:20],
+        "coverage_status": "failed" if failed else "ok",
+        "verification": "unverified" if failed else "verified",
+        "boundary_check": sorted(boundary_statuses) or ["checked"],
+        "geometry_source": "config/baseline/counties_geom.json.gz（TIGERweb 全国县界小包，3,144 县）",
         "denominator": "counties_expected（基准表 config/baseline/counties_census.json）",
         "per_county": per,
         "warnings": warns,
@@ -264,18 +300,20 @@ def coverage_counters(state_abbr: str, records, *, baseline: dict | None = None,
 
 
 def counters_from_funnels(state_abbr: str, funnels, *, baseline: dict | None = None,
-                          counties_declared=None, geoms_available: bool | None = None,
+                          counties_declared=None, missing_geom=None,
                           baseline_path: Path | str | None = None) -> dict:
     """给 gold_coalesce 用：从逐县 funnel 直接算 6 个数（不重扫行）。
 
     funnel 里 `nad_input - nad_malformed - nad_out_of_bounds` = 该县可用 NAD 行数；
     `output_rows` = 该县融合行数（＝ substantive 阈值的第一优先分母）。
+    `missing_geom`：**缺县界几何的县 fips 列表**（调用方传；非空 → coverage_status=failed）。
     """
     try:
         base = baseline or load_baseline(baseline_path)
     except (SystemExit, OSError, ValueError) as exc:        # 基准表缺失不许拦住发布，但必须留痕
         return {"available": False, "reason": "baseline_unavailable: %s" % str(exc)[:120],
                 "counties_expected": None, "counties_done": len(list(funnels or [])),
+                "coverage_status": "failed", "verification": "unverified",
                 "warnings": ["基准表不可用：counties_expected=null（分母缺失，覆盖率本轮不算）"]}
     funnels = list(funnels or [])
     target = (state_abbr or "").upper()
@@ -293,11 +331,12 @@ def counters_from_funnels(state_abbr: str, funnels, *, baseline: dict | None = N
             substantive += 1
         else:
             reports.append({"county": fips, "nad_rows": nad_usable, "threshold": thr})
+    miss = sorted({str(x) for x in (missing_geom or [])})
     warns = []
     if not exp:
         warns.append("基准表里没有州 %s：counties_expected=null" % target)
-    if geoms_available is False:
-        warns.append("无县界几何：第②道清洗 skipped:no_geometry（不是通过）")
+    if miss:
+        warns.append("缺县界几何的县 %s：第②道清洗 fail（missing_geometry，不是通过）" % miss[:10])
     return {
         "available": True,
         "counties_expected": len(exp) or None,
@@ -309,7 +348,13 @@ def counters_from_funnels(state_abbr: str, funnels, *, baseline: dict | None = N
             if (f.get("nad_input") or 0) - (f.get("nad_malformed") or 0) - (f.get("nad_out_of_bounds") or 0) > 0),
         "counties_nad_substantive": substantive,
         "excluded_state_mismatch": 0,
-        "boundary_check": "skipped:no_geometry" if geoms_available is False else "checked",
+        "excluded_geom": sum(1 for f in funnels if (f.get("nad_out_of_bounds") or 0) > 0),
+        "missing_geom": len(miss),
+        "missing_geom_counties": miss[:20],
+        "coverage_status": "failed" if (miss or not exp) else "ok",
+        "verification": "unverified" if (miss or not exp) else "verified",
+        "boundary_check": "checked" if not miss else "missing_geometry",
+        "geometry_source": "config/baseline/counties_geom.json.gz（TIGERweb 全国县界小包，3,144 县）",
         "denominator": "counties_expected（基准表 config/baseline/counties_census.json）",
         "below_substantive": reports,
         "warnings": warns,

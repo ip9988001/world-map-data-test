@@ -169,7 +169,7 @@
       "keys": ["counties_expected", "counties_done", "counties_declared",
                "counties_with_any_rows", "counties_with_nad_rows", "counties_nad_substantive"],
       "_dispatch_note": "派单原文列了 7 个键，其中 counties_done 重复出现一次；去重后为 6 个唯一键名（本数组为唯一口径）",
-      "excluded_counters": ["excluded_state_mismatch", "excluded_out_of_county_geometry"],
+      "excluded_counters": ["excluded_state_mismatch", "excluded_geom", "missing_geom"],
       "compat_change": "STATUS.json 旧版 `counties_done` 是「县 fips 数组」；新契约里它是「县数（int）」。为不丢信息，原数组改名落到 `counties_done_list`（新产物两份都出）。读旧 STATUS 的脚本必须自己兼容两种类型（旧产物只读不改）",
       "definitions": {
         "counties_expected": "基准表按目标州过滤后的县行数（唯一分母）",
@@ -179,7 +179,8 @@
         "counties_with_nad_rows": "NAD 源行数 > 0 的县数（过完两道清洗之后的可用 NAD 行）",
         "counties_nad_substantive": "NAD 行数 ≥ max(10, ceil(0.01 × 该县分母)) 的县数，逐县判，口径见 coverage.counties_nad_substantive",
         "excluded_state_mismatch": "行 state 与目标州不符被剔除的行数",
-        "excluded_out_of_county_geometry": "点在县多边形外被剔除的行数（仅真做了空间校验时才计数）"
+        "excluded_geom": "点在县多边形外被剔除的行数（真射线法；缺几何不算在这里，记 missing_geom）",
+        "missing_geom": "缺县界几何的县数（>0 即 coverage_status=failed，**不是** skipped）"
       }
     },
     "coverage_status": {
@@ -207,10 +208,16 @@
       "why_order": "先剔州再判县：溢出包（MA/VT/ME 的行混进 NH）不先剔掉，就会拿别的州的点去问 NH 的县多边形，既慢又会把边界噪声算成 NH 的行（counties_with_any_rows 虚增）"
     },
     "county_boundary_check": {
-      "interface": "county_boundary_check(rows, county_geom) -> {checked, rejected, skipped, status}",
-      "geometry_source": "上游 raw 的 tiger/TIGER-US-<ST>-county-<FIPS5>.geojson（TIGERweb Esri JSON，只认 geometry.rings）；仓内另有 data/dover/task001/tiger_boundary_kent_10' AND COUNTY.json 作为离线真几何样本",
-      "missing_geometry": "status = `skipped:no_geometry` + warn，**不许**把「没几何」当通过；也不许为凑校验去下载大几何包",
-      "no_bbox_substitute": "bbox 只许做预筛，不许当结论（沿用 county_index.py 口径）"
+      "interface": "county_boundary_check(rows, county_geom) -> {status, checked, kept, rejected, kept_rows}",
+      "geometry_source": "config/baseline/counties_geom.json.gz（全国县界小包，TIGERweb State_County/Counties 图层 + 服务端 maxAllowableOffset=0.001 化简，5 位小数）；manifest = config/baseline/county_geom_manifest.json；生成器 = scripts/fetch_county_geom.py",
+      "geometry_vintage": "TIGERweb State_County/Counties（2024 版县界，含 CT planning region 09110-09190 与 MD/VA 独立市）",
+      "geometry_coverage": "3,144/3,144 县（含 CT 09110-09190 planning region 与 MD/VA 独立市）；missing=0",
+      "geometry_sha256": "d1f104a6eff7bdd05523b391de53ffc60c32bee045bea81f0719a074c5434e39",
+      "geometry_sha256_scope": "counties_geom.json.gz 整个文件（gzip 头 mtime=0，可复算）；表体指纹另见 manifest.combined.body_sha256",
+      "missing_geometry_policy": "**fail**：status = `missing_geometry`（该县行不计数、记 missing_geom、整轮 coverage_status=failed + verification=unverified）。**禁止**返回 `skipped` 静默放过（muse-000153 明令：实现真校验，不许写 skipped）",
+      "source_selection": "先查一仓 raw-US-<ST>-v1 的 TIGER-US-<ST>-county-<FIPS5>.geojson → 实测 51 州 / 3,138 县，缺 6 个独立市（24510/29510/51600/51620/51760/51770）→ 覆盖不全，改取全国县界小包；cb_2024_us_county_500k.zip 本环境被 Cloudflare 403，故用同一官方服务的等价小包",
+      "no_bbox_substitute": "bbox 只许做预筛，不许当结论（沿用 county_index.py 口径）",
+      "no_big_geometry_download": "只下县界（本包 1.9 MB gzip）；严禁下全量 TIGER/线层几何"
     },
     "counties_nad_substantive": {
       "rule": "县内 NAD 行数 ≥ max(10, ceil(0.01 × 分母)) 才算 substantive",

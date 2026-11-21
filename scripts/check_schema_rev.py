@@ -29,6 +29,7 @@
         + deprecated_values 含 "empty" + 迁移说明；且与 enums.coverage_status 一致
      d) verification 两值（verified / unverified）且不得混进 coverage_status
      e) status_fields.keys 含 6 个 counties_* 键名（派单原文重复了一次 counties_done）
+     f) county_boundary_check：几何包实存 + sha256 对得上 + 3,144 县全覆盖 + 缺几何=fail（不许 skipped）
 """
 from __future__ import annotations
 
@@ -284,6 +285,36 @@ def check(base: dict, head: dict, want_rev: int) -> dict:
                 errs.append("enums.verification 必须 = ['verified','unverified']，且不得混进 coverage_status")
             if "unverified" in (h_en.get("coverage_status") or []):
                 errs.append("verification 被塞进了 coverage_status 枚举（它是 warn 标记，不是第五个状态值）")
+
+            # 县界真校验（muse-000153）：几何包必须在、sha256 对得上、3,144 县全覆盖、缺几何=fail 不许 skipped
+            cb = cov.get("county_boundary_check") or {}
+            if not cb:
+                errs.append("coverage.county_boundary_check 缺失（D2 第②道清洗的口径必须写死）")
+            else:
+                pol = str(cb.get("missing_geometry_policy") or "")
+                if "fail" not in pol or "skipped" in pol.split("禁止")[0]:
+                    errs.append("coverage.county_boundary_check.missing_geometry_policy 必须是 fail（不许 skipped 静默放过）")
+                if not str(cb.get("geometry_sha256") or "").strip():
+                    errs.append("coverage.county_boundary_check 缺 geometry_sha256（几何包必须可校验）")
+                gsrc = str(cb.get("geometry_source") or "")
+                gp = REPO / "config" / "baseline" / "counties_geom.json.gz"
+                if "counties_geom.json.gz" not in gsrc or not gp.exists():
+                    errs.append("县界几何包不存在或未被声明：config/baseline/counties_geom.json.gz")
+                else:
+                    gsha = hashlib.sha256(gp.read_bytes()).hexdigest()
+                    if gsha != cb.get("geometry_sha256"):
+                        errs.append("县界几何包 sha256 不符：SCHEMA=%s 实测=%s"
+                                    % (str(cb.get("geometry_sha256"))[:12], gsha[:12]))
+                    import gzip as _gz
+                    with _gz.open(gp, "rt", encoding="utf-8") as fh:
+                        geo = json.load(fh)
+                    if len(geo) != 3144:
+                        errs.append("县界几何包覆盖 %d 县，期望 3,144" % len(geo))
+                    elif not {c.get("county_fips") for c in (bdoc.get("counties") or [])} <= set(geo):
+                        errs.append("县界几何包未覆盖基准表全部县（缺 %s）"
+                                    % sorted({c.get("county_fips") for c in (bdoc.get("counties") or [])} - set(geo))[:6])
+                    else:
+                        notes.append("县界几何包实测：3,144/3,144 县 / sha256 对得上（真校验，缺几何=fail）")
 
             sf = cov.get("status_fields") or {}
             want_keys = {"counties_expected", "counties_done", "counties_declared",
