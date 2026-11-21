@@ -220,9 +220,9 @@
       "no_big_geometry_download": "只下县界（本包 1.9 MB gzip）；严禁下全量 TIGER/线层几何"
     },
     "counties_nad_substantive": {
-      "rule": "县内 NAD 行数 ≥ max(10, ceil(0.01 × 分母)) 才算 substantive",
-      "denominator_priority": "优先用该县**总融合行数**；该县融合行数为 0 时退回该县 housing_units（基准表列）",
-      "ties": "denominator 两种都缺 → 既不计数也不当通过，记 warn 并落 null",
+      "rule": "县内 NAD 行数 ≥ max(10, ceil(0.01 × housing_units)) 才算 substantive",
+      "denominator_priority": "分母**固定为该县 housing_units**（基准表列）；该县融合行数只作被除数，绝不当分母（旧「优先总融合行数是 0 时退回」已作废，muse-000155/000156）",
+      "ties": "该县 housing_units 缺失或 ≤0 → 既不计数也不当通过，记 warn 并落 null",
       "why": "10 行是绝对下限（防止 1 行也算「有 NAD 背书」）；1% 是相对下限（大县 500 行占 30 万行 0.17%，说明 NAD 只覆盖了一个角，不能让整县挂 NAD 背书）"
     }
   },

@@ -117,12 +117,12 @@ ok = rows > 0
 
 ```
 县内 NAD 行数 >= max(10, ceil(0.01 × 分母))
-分母：优先该县**总融合行数**；该县融合行数为 0 时退回该县 housing_units（基准表列）
+分母：固定为该县 **housing_units**（基准表列）；该县融合行数只作被除数，**绝不当分母**（muse-000155/000156 裁定，旧「优先总融合行数」已作废）
 ```
 
 - 10 行是绝对下限（1 行不算 NAD 背书）；1% 是相对下限（大县 500 行占 30 万行 0.17%，
   只覆盖一个角，不能让整县挂 NAD 背书）。
-- 分母两种都缺 → 不计数也不当通过，落 null + warn。
+- 基准表无可用 housing_units（缺失或 ≤0）→ 不计数也不当通过，落 null + warn。
 
 ### D2 测试用例（`tests/test_d1_d2.py` 逐条落地）
 
@@ -130,6 +130,6 @@ ok = rows > 0
 |---|---|---|
 | ① | 10 县在 counties_done，只有 3 县有 NAD 行 | `counties_with_nad_rows=3`，`counties_with_any_rows=10`，分母仍 = 基准表 10 |
 | ② | 某县 NAD 9 行 | 不进 `counties_nad_substantive`（阈值 10） |
-| ③ | 同县 500 行、阈值 600 | 不进；补到 600 行（总融合行数不变）→ 进 |
+| ③ | 同县 500 行、阈值 1,778（=ceil(1%×177,734)；旧口径 600 已作废） | 不进；NAD 补到 1,800 行（融合行数不变）→ 进 |
 | ④ | 溢出包全 MA/VT/ME 的行喂给 NH | 全部落 `excluded_state_mismatch`，`counties_with_any_rows` 不得虚增 |
 | ⑤ | 真几何四类断言 | 县内点留 / 县外点剔（`excluded_geom=1`）/ `state_abbr` 不符先剔（`excluded_state_mismatch=1`，`counties_with_any_rows` 不虚增）/ 缺几何 → `missing_geometry` + `coverage_status=failed` + `verification=unverified`（**不是 skipped**） |
