@@ -1,0 +1,2 @@
+zip,city_primary,city_confirmed,state_abbr,state_name,county,county_fips,county_confirmed,in_zcta,sources,flags
+96799,Pago Pago,no,AS,American Samoa,,60050,yes,yes,Z+H+C,county_auth_stale:hud=60 polygon=?(60050); city_not_in_gazetteer_places

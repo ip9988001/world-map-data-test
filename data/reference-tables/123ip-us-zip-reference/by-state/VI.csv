@@ -1,0 +1,11 @@
+zip,city_primary,city_confirmed,state_abbr,state_name,county,county_fips,county_confirmed,in_zcta,sources,flags
+00801,St Thomas,no,VI,Virgin Islands,,,,no,H,county_fips_missing; city_not_in_gazetteer_places
+00802,St Thomas,no,VI,Virgin Islands,,78030,yes,yes,Z+H+C,county_auth_stale:hud=78030 polygon=?(78030); city_not_in_gazetteer_places
+00803,St Thomas,no,VI,Virgin Islands,,,,no,H,county_fips_missing; city_not_in_gazetteer_places
+00804,St Thomas,no,VI,Virgin Islands,,,,no,H,county_fips_missing; city_not_in_gazetteer_places
+00820,Christiansted,no,VI,Virgin Islands,,78010,yes,yes,Z+H+C,county_auth_stale:hud=78010 polygon=?(78010); city_not_in_gazetteer_places
+00830,St John,no,VI,Virgin Islands,,78020,yes,yes,Z+H+C,county_auth_stale:hud=78020 polygon=?(78020); city_not_in_gazetteer_places
+00831,St John,no,VI,Virgin Islands,,,,no,H,county_fips_missing; city_not_in_gazetteer_places
+00840,Frederiksted,no,VI,Virgin Islands,,78010,yes,yes,Z+H+C,county_auth_stale:hud=78010 polygon=?(78010); city_not_in_gazetteer_places
+00850,Kingshill,no,VI,Virgin Islands,,78010,yes,yes,Z+H+C,county_auth_stale:hud=78010 polygon=?(78010); city_not_in_gazetteer_places
+00851,,,VI,Virgin Islands,,78010,yes,yes,Z+C,county_from_polygon; city_missing

@@ -1,0 +1,4 @@
+zip,city_primary,city_confirmed,state_abbr,state_name,county,county_fips,county_confirmed,in_zcta,sources,flags
+96950,Saipan,no,MP,Northern Mariana Islands,,69110,yes,yes,Z+H+C,county_auth_stale:hud=69110 polygon=?(69110); city_not_in_gazetteer_places
+96951,Rota,no,MP,Northern Mariana Islands,,69100,yes,yes,Z+H+C,county_auth_stale:hud=69100 polygon=?(69100); city_not_in_gazetteer_places
+96952,Tinian,no,MP,Northern Mariana Islands,,69120,yes,yes,Z+H+C,county_auth_stale:hud=69120 polygon=?(69120); city_not_in_gazetteer_places
