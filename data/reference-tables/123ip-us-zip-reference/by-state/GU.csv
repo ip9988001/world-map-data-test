@@ -1,0 +1,11 @@
+zip,city_primary,city_confirmed,state_abbr,state_name,county,county_fips,county_confirmed,in_zcta,sources,flags
+96910,Hagatna,no,GU,Guam,,66010,yes,yes,Z+H+C,county_auth_stale:hud=66010 polygon=?(66010); city_not_in_gazetteer_places
+96913,Barrigada,no,GU,Guam,,66010,yes,yes,Z+H+C,county_auth_stale:hud=66010 polygon=?(66010); city_not_in_gazetteer_places
+96915,Santa Rita,no,GU,Guam,,66010,yes,yes,Z+H+C,county_auth_stale:hud=66010 polygon=?(66010); city_not_in_gazetteer_places
+96916,,,GU,Guam,,66010,yes,yes,Z+C,county_from_polygon; city_missing
+96917,,,GU,Guam,,66010,yes,yes,Z+C,county_from_polygon; city_missing
+96921,Barrigada,no,GU,Guam,,,,no,H,county_fips_missing; city_not_in_gazetteer_places
+96923,Mangilao,no,GU,Guam,,,,no,H,county_fips_missing; city_not_in_gazetteer_places
+96928,Agat,no,GU,Guam,,66010,yes,yes,Z+H+C,county_auth_stale:hud=66010 polygon=?(66010); city_not_in_gazetteer_places
+96929,Yigo,no,GU,Guam,,66010,yes,yes,Z+H+C,county_auth_stale:hud=66010 polygon=?(66010); city_not_in_gazetteer_places
+96932,Hagatna,no,GU,Guam,,,,no,H,county_fips_missing; city_not_in_gazetteer_places

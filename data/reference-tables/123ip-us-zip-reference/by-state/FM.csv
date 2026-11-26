@@ -1,0 +1,5 @@
+zip,city_primary,city_confirmed,state_abbr,state_name,county,county_fips,county_confirmed,in_zcta,sources,flags
+96941,Pohnpei,no,FM,,,,,no,H,county_fips_missing; city_not_in_gazetteer_places
+96942,Chuuk,no,FM,,,,,no,H,county_fips_missing; city_not_in_gazetteer_places
+96943,Yap,no,FM,,,,,no,H,county_fips_missing; city_not_in_gazetteer_places
+96944,Kosrae,no,FM,,,,,no,H,county_fips_missing; city_not_in_gazetteer_places

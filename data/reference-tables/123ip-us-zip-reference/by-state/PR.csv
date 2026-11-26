@@ -1,0 +1,170 @@
+zip,city_primary,city_confirmed,state_abbr,state_name,county,county_fips,county_confirmed,in_zcta,sources,flags
+00601,Adjuntas,no,PR,Puerto Rico,Adjuntas,72001,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00602,Aguada,no,PR,Puerto Rico,Aguada,72003,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00603,Aguadilla,no,PR,Puerto Rico,Aguadilla,72005,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00604,Aguadilla,no,PR,Puerto Rico,Aguadilla,72005,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00605,Aguadilla,no,PR,Puerto Rico,Aguadilla,72005,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00606,Maricao,no,PR,Puerto Rico,Maricao,72093,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00610,Anasco,no,PR,Puerto Rico,Añasco,72011,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00611,Angeles,no,PR,Puerto Rico,Utuado,72141,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00612,Arecibo,no,PR,Puerto Rico,Arecibo,72013,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00613,Arecibo,no,PR,Puerto Rico,Arecibo,72013,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00614,Arecibo,no,PR,Puerto Rico,Arecibo,72013,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00616,Bajadero,no,PR,Puerto Rico,Arecibo,72013,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00617,Barceloneta,no,PR,Puerto Rico,Barceloneta,72017,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00622,Boqueron,no,PR,Puerto Rico,Cabo Rojo,72023,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00623,Cabo Rojo,no,PR,Puerto Rico,Cabo Rojo,72023,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00624,Penuelas,no,PR,Puerto Rico,Peñuelas,72111,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00627,Camuy,no,PR,Puerto Rico,Camuy,72027,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00631,Castaner,no,PR,Puerto Rico,Lares,72081,yes,yes,Z+H+C,"county_centroid_neighbor:hud=Lares Municipio(72081,100%) polygon=Adjuntas Municipio(72001); city_not_in_gazetteer_places"
+00636,Hormigueros Zona Urbana,no,PR,Puerto Rico,San Germán,72125,yes,yes,Z+C,county_from_polygon; city_from_nearest_place:4.8km
+00637,Sabana Grande,no,PR,Puerto Rico,Sabana Grande,72121,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00638,Ciales,no,PR,Puerto Rico,Ciales,72039,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00641,Utuado,no,PR,Puerto Rico,Utuado,72141,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00646,Dorado,no,PR,Puerto Rico,Dorado,72051,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00647,Ensenada,no,PR,Puerto Rico,Guánica,72055,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00650,Florida,no,PR,Puerto Rico,Florida,72054,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00652,Garrochales,no,PR,Puerto Rico,Arecibo,72013,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00653,Guanica,no,PR,Puerto Rico,Guánica,72055,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00656,Guayanilla,no,PR,Puerto Rico,Guayanilla,72059,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00659,Hatillo,no,PR,Puerto Rico,Hatillo,72065,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00660,Hormigueros,no,PR,Puerto Rico,Hormigueros,72067,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00662,Isabela,no,PR,Puerto Rico,Isabela,72071,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00664,Jayuya,no,PR,Puerto Rico,Jayuya,72073,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00667,Lajas,no,PR,Puerto Rico,Lajas,72079,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00669,Lares,no,PR,Puerto Rico,Lares,72081,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00670,Las Marias,no,PR,Puerto Rico,Las Marías,72083,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00674,Manati,no,PR,Puerto Rico,Manatí,72091,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00676,Moca,no,PR,Puerto Rico,Moca,72099,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00677,Rincon,no,PR,Puerto Rico,Rincón,72117,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00678,Quebradillas,no,PR,Puerto Rico,Quebradillas,72115,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00680,Mayaguez,no,PR,Puerto Rico,Mayagüez,72097,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00681,Mayaguez,no,PR,Puerto Rico,Mayagüez,72097,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00682,Mayaguez,no,PR,Puerto Rico,Mayagüez,72097,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00683,San German,no,PR,Puerto Rico,San Germán,72125,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00685,San Sebastian,no,PR,Puerto Rico,San Sebastián,72131,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00687,Morovis,no,PR,Puerto Rico,Morovis,72101,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00688,Sabana Hoyos,no,PR,Puerto Rico,Arecibo,72013,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00690,San Antonio,no,PR,Puerto Rico,Aguadilla,72005,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00692,Vega Alta,no,PR,Puerto Rico,Vega Alta,72143,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00693,Vega Baja,no,PR,Puerto Rico,Vega Baja,72145,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00694,Vega Baja,no,PR,Puerto Rico,Vega Baja,72145,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00698,Yauco,no,PR,Puerto Rico,Yauco,72153,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00703,Aguas Buenas,no,PR,Puerto Rico,Aguas Buenas,72007,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00704,Aguirre,no,PR,Puerto Rico,Salinas,72123,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00705,Aibonito,no,PR,Puerto Rico,Aibonito,72009,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00707,Maunabo,no,PR,Puerto Rico,Maunabo,72095,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00714,Arroyo,no,PR,Puerto Rico,Arroyo,72015,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00715,Mercedita,no,PR,Puerto Rico,Ponce,72113,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00716,Ponce,no,PR,Puerto Rico,Ponce,72113,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00717,Ponce,no,PR,Puerto Rico,Ponce,72113,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00718,Naguabo,no,PR,Puerto Rico,Naguabo,72103,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00719,Naranjito,no,PR,Puerto Rico,Naranjito,72105,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00720,Orocovis,no,PR,Puerto Rico,Orocovis,72107,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00721,Palmer,no,PR,Puerto Rico,Río Grande,72119,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00723,Patillas,no,PR,Puerto Rico,Patillas,72109,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00725,Caguas,no,PR,Puerto Rico,Caguas,72025,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00726,Caguas,no,PR,Puerto Rico,Caguas,72025,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00727,Caguas,no,PR,Puerto Rico,Caguas,72025,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00728,Ponce,no,PR,Puerto Rico,Ponce,72113,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00729,Canovanas,no,PR,Puerto Rico,Canóvanas,72029,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00730,Ponce,no,PR,Puerto Rico,Ponce,72113,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00731,Ponce,no,PR,Puerto Rico,Ponce,72113,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00732,Ponce,no,PR,Puerto Rico,Ponce,72113,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00733,Ponce,no,PR,Puerto Rico,Ponce,72113,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00735,Ceiba,no,PR,Puerto Rico,Ceiba,72037,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00736,Cayey,no,PR,Puerto Rico,Cayey,72035,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00737,Cayey,no,PR,Puerto Rico,Cayey,72035,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00738,Fajardo,no,PR,Puerto Rico,Fajardo,72053,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00739,Cidra,no,PR,Puerto Rico,Cidra,72041,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00740,Puerto Real,no,PR,Puerto Rico,Fajardo,72053,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00741,Punta Santiago,no,PR,Puerto Rico,Humacao,72069,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00744,Rio Blanco,no,PR,Puerto Rico,Naguabo,72103,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00745,Rio Grande,no,PR,Puerto Rico,Río Grande,72119,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00751,Salinas,no,PR,Puerto Rico,Salinas,72123,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00754,San Lorenzo,no,PR,Puerto Rico,San Lorenzo,72129,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00757,Santa Isabel,no,PR,Puerto Rico,Santa Isabel,72133,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00765,Vieques,no,PR,Puerto Rico,Vieques,72147,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00766,Villalba,no,PR,Puerto Rico,Villalba,72149,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00767,Yabucoa,no,PR,Puerto Rico,Yabucoa,72151,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00769,Coamo,no,PR,Puerto Rico,Coamo,72043,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00771,Las Piedras,no,PR,Puerto Rico,Las Piedras,72085,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00772,Loiza,no,PR,Puerto Rico,Loíza,72087,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00773,Luquillo,no,PR,Puerto Rico,Luquillo,72089,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00775,Culebra,no,PR,Puerto Rico,Culebra,72049,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00777,Juncos,no,PR,Puerto Rico,Juncos,72077,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00778,Gurabo,no,PR,Puerto Rico,Gurabo,72063,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00780,Coto Laurel,no,PR,Puerto Rico,Ponce,72113,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00782,Comerio,no,PR,Puerto Rico,Comerío,72045,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00783,Corozal,no,PR,Puerto Rico,Corozal,72047,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00784,Guayama,no,PR,Puerto Rico,Guayama,72057,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00785,Guayama,no,PR,Puerto Rico,Guayama,72057,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00786,La Plata,no,PR,Puerto Rico,Aibonito,72009,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00791,Humacao,no,PR,Puerto Rico,Humacao,72069,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00792,Humacao,no,PR,Puerto Rico,Humacao,72069,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00794,Barranquitas,no,PR,Puerto Rico,Barranquitas,72019,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00795,Juana Diaz,no,PR,Puerto Rico,Juana Díaz,72075,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00901,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00902,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00906,Catao Zona Urbana,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+R+C,city_from_nearest_place:5.5km
+00907,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00908,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00909,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00910,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00911,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00912,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00913,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00914,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00915,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00916,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00917,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00918,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00919,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00920,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00921,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00922,San Juan,no,PR,Puerto Rico,Guaynabo,72061,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00923,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00924,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00925,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00926,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00927,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00928,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00929,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00931,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00934,Fort Buchanan,no,PR,Puerto Rico,Bayamón,72021,yes,yes,Z+H+C,"county_centroid_neighbor:hud=Bayamón Municipio(72021,95%) polygon=Guaynabo Municipio(72061); city_not_in_gazetteer_places"
+00935,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00936,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00937,San Juan,no,PR,Puerto Rico,Carolina,72031,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00940,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00949,Toa Baja,no,PR,Puerto Rico,Toa Baja,72137,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00950,Toa Baja,no,PR,Puerto Rico,Toa Baja,72137,yes,yes,Z+H+C,"county_centroid_neighbor:hud=Toa Baja Municipio(72137,100%) polygon=Dorado Municipio(72051); city_not_in_gazetteer_places"
+00951,Toa Baja,no,PR,Puerto Rico,Toa Baja,72137,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00952,Sabana Seca,no,PR,Puerto Rico,Toa Baja,72137,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00953,Toa Alta,no,PR,Puerto Rico,Toa Alta,72135,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00954,Toa Alta,no,PR,Puerto Rico,Toa Alta,72135,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00956,Bayamon,no,PR,Puerto Rico,Bayamón,72021,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00957,Bayamon,no,PR,Puerto Rico,Bayamón,72021,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00958,Bayamon,no,PR,Puerto Rico,Bayamón,72021,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00959,Bayamon,no,PR,Puerto Rico,Bayamón,72021,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00960,Bayamon,no,PR,Puerto Rico,Bayamón,72021,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00961,Bayamon,no,PR,Puerto Rico,Bayamón,72021,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00962,Catano,no,PR,Puerto Rico,Cataño,72033,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00963,Catano,no,PR,Puerto Rico,Cataño,72033,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00965,Guaynabo,no,PR,Puerto Rico,Guaynabo,72061,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00966,Guaynabo,no,PR,Puerto Rico,Guaynabo,72061,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00968,Guaynabo,no,PR,Puerto Rico,Guaynabo,72061,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00969,Guaynabo,no,PR,Puerto Rico,Guaynabo,72061,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00970,Guaynabo,no,PR,Puerto Rico,Guaynabo,72061,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00971,Guaynabo,no,PR,Puerto Rico,Guaynabo,72061,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00975,San Juan,no,PR,Puerto Rico,San Juan,72127,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00976,Trujillo Alto,no,PR,Puerto Rico,Trujillo Alto,72139,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00977,Trujillo Alto,no,PR,Puerto Rico,Cataño,72033,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00979,Carolina,no,PR,Puerto Rico,Carolina,72031,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00981,Carolina,no,PR,Puerto Rico,Carolina,72031,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00982,Carolina,no,PR,Puerto Rico,Carolina,72031,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00983,Carolina,no,PR,Puerto Rico,Carolina,72031,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00984,Carolina,no,PR,Puerto Rico,Carolina,72031,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00985,Carolina,no,PR,Puerto Rico,Carolina,72031,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00986,Carolina,no,PR,Puerto Rico,Carolina,72031,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
+00987,Carolina,no,PR,Puerto Rico,Carolina,72031,yes,yes,Z+H+C,city_not_in_gazetteer_places
+00988,Carolina,no,PR,Puerto Rico,Carolina,72031,yes,no,H,county_single_source_auth; city_not_in_gazetteer_places
